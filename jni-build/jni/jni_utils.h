@@ -1,5 +1,5 @@
 /* 
-Copyright 2016 Narrative Nithts Inc. All Rights Reserved.
+Copyright 2016 Narrative Nights Inc. All Rights Reserved.
 Copyright 2015 Google Inc. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
