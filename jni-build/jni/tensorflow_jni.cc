@@ -104,13 +104,13 @@ static int process(const int* pixels) {
 	auto input_tensor_mapped = input_tensor.tensor<float, 2>();
 	
 	for(int i= 0; i<PIXEL_SIZE; ++i) {
-		bool pix = pixels[i] != 0;
-		float value;
-		if( pix ) {
-			value = 1.0f;
-		} else {
-			value = 0.0f;
+		int pixel = pixels[i];
+		if( pixel >= 0xff ) {
+			pixel = 0xff;
+		} else if( pixel < 0 ) {
+			pixel = 0;
 		}
+		float value = (float)pixel / 255.0f;
 		input_tensor_mapped(0, i) = value;
 	}
 	

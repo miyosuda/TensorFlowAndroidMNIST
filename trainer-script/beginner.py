@@ -50,27 +50,27 @@ _b = b.eval(sess)
 sess.close()
 
 # Create new graph for exporting
-g2 = tf.Graph()
-with g2.as_default():
+g_2 = tf.Graph()
+with g_2.as_default():
     # Reconstruct graph
-    x2 = tf.placeholder("float", [None, 784], name="input")
-    W2 = tf.constant(_W, name="constant_W")
-    b2 = tf.constant(_b, name="constant_b")
-    y2 = tf.nn.softmax(tf.matmul(x2, W2) + b2, name="output")
+    x_2 = tf.placeholder("float", [None, 784], name="input")
+    W_2 = tf.constant(_W, name="constant_W")
+    b_2 = tf.constant(_b, name="constant_b")
+    y_2 = tf.nn.softmax(tf.matmul(x_2, W_2) + b_2, name="output")
 
-    sess2 = tf.Session()
+    sess_2 = tf.Session()
 
-    init2 = tf.initialize_all_variables();
-    sess2.run(init2)
+    init_2 = tf.initialize_all_variables();
+    sess_2.run(init_2)
 
     
-    graph_def = g2.as_graph_def()
+    graph_def = g_2.as_graph_def()
     
     tf.train.write_graph(graph_def, './tmp/beginner-export',
                          'beginner-graph.pb', as_text=False)
 
     # Test trained model
-    y_2 = tf.placeholder("float", [None, 10])
-    correct_prediction2 = tf.equal(tf.argmax(y2, 1), tf.argmax(y_2, 1))
-    accuracy2 = tf.reduce_mean(tf.cast(correct_prediction2, "float"))
-    print(accuracy2.eval({x2: mnist.test.images, y_2: mnist.test.labels}, sess2))
+    y__2 = tf.placeholder("float", [None, 10])
+    correct_prediction_2 = tf.equal(tf.argmax(y_2, 1), tf.argmax(y__2, 1))
+    accuracy_2 = tf.reduce_mean(tf.cast(correct_prediction_2, "float"))
+    print(accuracy_2.eval({x_2: mnist.test.images, y__2: mnist.test.labels}, sess_2))

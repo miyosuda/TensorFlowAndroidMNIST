@@ -17,18 +17,21 @@
 package jp.narr.tensorflowmnist;
 
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 
 public class DrawRenderer {
-	public void renderModel(Canvas canvas, DrawModel model, Paint paint,
-	                        int startLineIndex, int offX, int offY) {
+	/**
+	 * Draw lines to canvas
+	 */
+	public static void renderModel(Canvas canvas, DrawModel model, Paint paint,
+	                               int startLineIndex) {
 		paint.setAntiAlias(true);
 
 		int lineSize = model.getLineSize();
 		for (int i = startLineIndex; i < lineSize; ++i) {
 			DrawModel.Line line = model.getLine(i);
-			paint.setColor(line.color);
-			paint.setStrokeWidth(line.width);
+			paint.setColor(Color.BLACK);
 			int elemSize = line.getElemSize();
 			if (elemSize < 1) {
 				continue;
@@ -37,15 +40,11 @@ public class DrawRenderer {
 			float lastX = elem.x;
 			float lastY = elem.y;
 
-			float radius = line.width / 2;
-			canvas.drawCircle(offX + lastX, offX + lastY, radius, paint);
-
 			for (int j = 0; j < elemSize; ++j) {
 				elem = line.getElem(j);
 				float x = elem.x;
 				float y = elem.y;
-				canvas.drawCircle(offX + x, offY + y, radius, paint);
-				canvas.drawLine(offX + lastX, offY + lastY, offX + x, offX + y, paint);
+				canvas.drawLine(lastX, lastY, x, y, paint);
 				lastX = x;
 				lastY = y;
 			}

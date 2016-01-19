@@ -24,7 +24,7 @@ import android.view.View;
 public class DrawView extends View {
 	private Paint mPaint = new Paint();
 	private DrawModel mModel;
-	private DrawRenderer mRenderer = new DrawRenderer();
+	// 28x28 pixel Bitmap
 	private Bitmap mOffscreenBitmap;
 	private Canvas mOffscreenCanvas;
 
@@ -55,9 +55,12 @@ public class DrawView extends View {
 
 	private void setup() {
 		mSetuped = true;
+
+		// View size
 		float width = getWidth();
 		float height = getHeight();
 
+		// Model (bitmap) size
 		float modelWidth = mModel.getWidth();
 		float modelHeight = mModel.getHeight();
 
@@ -96,11 +99,16 @@ public class DrawView extends View {
 		if (startIndex < 0) {
 			startIndex = 0;
 		}
-		mRenderer.renderModel(mOffscreenCanvas, mModel, mPaint, startIndex, 0, 0);
+
+		DrawRenderer.renderModel(mOffscreenCanvas, mModel, mPaint, startIndex);
 		canvas.drawBitmap(mOffscreenBitmap, mMatrix, mPaint);
+
 		mDrawnLineSize = mModel.getLineSize();
 	}
 
+	/**
+	 * Convert screen position to local pos (pos in bitmap)
+	 */
 	public void calcPos(float x, float y, PointF out) {
 		mTmpPoints[0] = x;
 		mTmpPoints[1] = y;
@@ -135,6 +143,9 @@ public class DrawView extends View {
 		reset();
 	}
 
+	/**
+	 * Get 28x28 pixel data for tensorflow input.
+	 */
 	public int[] getPixelData() {
 		if (mOffscreenBitmap == null) {
 			return null;
@@ -143,12 +154,13 @@ public class DrawView extends View {
 		int width = mOffscreenBitmap.getWidth();
 		int height = mOffscreenBitmap.getHeight();
 
+		// Get 28x28 pixel data from bitmap
 		int[] pixels = new int[width * height];
 		mOffscreenBitmap.getPixels(pixels, 0, width, 0, 0, width, height);
 
 		int[] retPixels = new int[pixels.length];
 		for (int i = 0; i < pixels.length; ++i) {
-			// set 0 for white and 255 for black pixel
+			// Set 0 for white and 255 for black pixel
 			int pix = pixels[i];
 			int b = pix & 0xff;
 			retPixels[i] = 0xff - b;

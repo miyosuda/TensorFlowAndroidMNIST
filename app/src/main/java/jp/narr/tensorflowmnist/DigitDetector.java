@@ -18,7 +18,6 @@ package jp.narr.tensorflowmnist;
 
 import android.content.Context;
 import android.content.res.AssetManager;
-import android.util.Log;
 
 /**
  * Handwritten digit detector.
@@ -26,21 +25,26 @@ import android.util.Log;
  * Created by miyoshi on 16/01/17.
  */
 public class DigitDetector {
-	private static final String TAG = "DigitDetector";
-
 	static {
 		System.loadLibrary("tensorflow_mnist");
 	}
 
 	private native int init(AssetManager assetManager, String model);
 
+	/**
+	 * draw pixels
+	 */
 	public native int detectDigit(int[] pixels);
 
 	public boolean setup(Context context) {
 		AssetManager assetManager = context.getAssets();
+
+		// model from beginner tutorial
 		//int ret = init(assetManager, "file:///android_asset/beginner-graph.pb");
+
+		// model from expert tutorial
 		int ret = init(assetManager, "file:///android_asset/expert-graph.pb");
-		Log.i(TAG, "init ret=" + ret);
+
 		return ret >= 0;
 	}
 }

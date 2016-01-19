@@ -16,8 +16,6 @@
 
 package jp.narr.tensorflowmnist;
 
-import android.graphics.Color;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -34,13 +32,9 @@ public class DrawModel {
 	}
 
 	public static class Line {
-		public int color;
-		public float width;
 		private List<LineElem> elems = new ArrayList<>();
 
-		private Line(int color, float width) {
-			this.color = color;
-			this.width = width;
+		private Line() {
 		}
 
 		private void addElem(LineElem elem) {
@@ -56,19 +50,16 @@ public class DrawModel {
 		}
 	}
 
-	private int mColor;
-	private float mStrokeWidth;
 	private Line mCurrentLine;
 
-	private int mWidth;
-	private int mHeight;
+	private int mWidth;  // pixel width = 28
+	private int mHeight; // pixel height = 28
 
 	private List<Line> mLines = new ArrayList<>();
 
 	public DrawModel(int width, int height) {
 		this.mWidth = width;
 		this.mHeight = height;
-		mColor = Color.BLACK;
 	}
 
 	public int getWidth() {
@@ -79,12 +70,8 @@ public class DrawModel {
 		return mHeight;
 	}
 
-	public void setStrokeWidth(float strokeWidth) {
-		this.mStrokeWidth = strokeWidth;
-	}
-
 	public void startLine(float x, float y) {
-		mCurrentLine = new Line(mColor, mStrokeWidth);
+		mCurrentLine = new Line();
 		mCurrentLine.addElem(new LineElem(x, y));
 		mLines.add(mCurrentLine);
 	}
