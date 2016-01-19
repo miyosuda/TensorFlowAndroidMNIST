@@ -38,7 +38,8 @@ public class DigitDetector {
 
 	public boolean setup(Context context) {
 		AssetManager assetManager = context.getAssets();
-		int ret = init(assetManager, "file:///android_asset/graph.pb");
+		//int ret = init(assetManager, "file:///android_asset/beginner-graph.pb");
+		int ret = init(assetManager, "file:///android_asset/expert-graph.pb");
 		Log.i(TAG, "init ret=" + ret);
 		return ret >= 0;
 	}
