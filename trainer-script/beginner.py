@@ -13,9 +13,6 @@ mnist = input_data.read_data_sets("./tmp/data/", one_hot=True)
 g = tf.Graph()
 
 with g.as_default():
-    c = tf.constant(5.0)
-    assert c.graph is g
-
     # Create the model
     x = tf.placeholder("float", [None, 784])
     W = tf.Variable(tf.zeros([784, 10]), name="vaiable_W")
