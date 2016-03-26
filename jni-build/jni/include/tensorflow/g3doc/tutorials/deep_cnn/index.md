@@ -77,21 +77,21 @@ for details.  It consists of 1,068,298 learnable parameters and requires about
 ## Code Organization
 
 The code for this tutorial resides in
-[`tensorflow/models/image/cifar10/`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/models/image/cifar10/).
+[`tensorflow/models/image/cifar10/`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/).
 
 File | Purpose
 --- | ---
-[`cifar10_input.py`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/models/image/cifar10/cifar10_input.py) | Reads the native CIFAR-10 binary file format.
-[`cifar10.py`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/models/image/cifar10/cifar10.py) | Builds the CIFAR-10 model.
-[`cifar10_train.py`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/models/image/cifar10/cifar10_train.py) | Trains a CIFAR-10 model on a CPU or GPU.
-[`cifar10_multi_gpu_train.py`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/models/image/cifar10/cifar10_multi_gpu_train.py) | Trains a CIFAR-10 model on multiple GPUs.
-[`cifar10_eval.py`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/models/image/cifar10/cifar10_eval.py) | Evaluates the predictive performance of a CIFAR-10 model.
+[`cifar10_input.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10_input.py) | Reads the native CIFAR-10 binary file format.
+[`cifar10.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10.py) | Builds the CIFAR-10 model.
+[`cifar10_train.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10_train.py) | Trains a CIFAR-10 model on a CPU or GPU.
+[`cifar10_multi_gpu_train.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10_multi_gpu_train.py) | Trains a CIFAR-10 model on multiple GPUs.
+[`cifar10_eval.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10_eval.py) | Evaluates the predictive performance of a CIFAR-10 model.
 
 
 ## CIFAR-10 Model
 
 The CIFAR-10 network is largely contained in
-[`cifar10.py`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/models/image/cifar10/cifar10.py).
+[`cifar10.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10.py).
 The complete training
 graph contains roughly 765 operations. We find that we can make the code most
 reusable by constructing the graph with the following modules:
@@ -105,7 +105,7 @@ adds operations that perform inference, i.e. classification, on supplied images.
 add operations that compute the loss,
 gradients, variable updates and visualization summaries.
 
-### Model Inputs {#model-inputs}
+### Model Inputs 
 
 The input part of the model is built by the functions `inputs()` and
 `distorted_inputs()` which read images from the CIFAR-10 binary data files.
@@ -143,7 +143,7 @@ processing time. To prevent these operations from slowing down training, we run
 them inside 16 separate threads which continuously fill a TensorFlow
 [queue](../../api_docs/python/io_ops.md#shuffle_batch).
 
-### Model Prediction {#model-prediction}
+### Model Prediction 
 
 The prediction part of the model is constructed by the `inference()` function
 which adds operations to compute the *logits* of the predictions. That part of
@@ -182,7 +182,7 @@ layers of Alex's original model are locally connected and not fully connected.
 Try editing the architecture to exactly reproduce the locally connected
 architecture in the top layer.
 
-### Model Training {#model-training}
+### Model Training 
 
 The usual method for training a network to perform N-way classification is
 [multinomial logistic regression](https://en.wikipedia.org/wiki/Multinomial_logistic_regression),
@@ -301,7 +301,7 @@ values.  See how the scripts use
 [`ExponentialMovingAverage`](../../api_docs/python/train.md#ExponentialMovingAverage)
 for this purpose.
 
-## Evaluating a Model {#evaluating-a-model}
+## Evaluating a Model 
 
 Let us now evaluate how well the trained model performs on a hold-out data set.
 The model is evaluated by the script `cifar10_eval.py`.  It constructs the model

@@ -21,7 +21,7 @@ limitations under the License.
 #include "tensorflow/core/lib/gtl/array_slice.h"
 #include "tensorflow/core/lib/strings/stringprintf.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/platform/port.h"
+#include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/tensor_slice_writer.h"
 
 namespace tensorflow {
@@ -55,10 +55,10 @@ class ShardedFilenameOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override {
     static const char* input_names[3] = {"basename", "shard", "num_shards"};
     for (int i = 0; i < ctx->num_inputs(); ++i) {
-      OP_REQUIRES(ctx, TensorShapeUtils::IsLegacyScalar(ctx->input(i).shape()),
-                  errors::InvalidArgument(
-                      input_names[i], " must be a scalar, got shape ",
-                      ctx->input(i).shape().ShortDebugString()));
+      OP_REQUIRES(ctx, IsLegacyScalar(ctx->input(i).shape()),
+                  errors::InvalidArgument(input_names[i],
+                                          " must be a scalar, got shape ",
+                                          ctx->input(i).shape().DebugString()));
     }
     Tensor* out = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({}), &out));
@@ -78,10 +78,10 @@ class ShardedFilespecOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override {
     static const char* input_names[2] = {"basename", "num_shards"};
     for (int i = 0; i < ctx->num_inputs(); ++i) {
-      OP_REQUIRES(ctx, TensorShapeUtils::IsLegacyScalar(ctx->input(i).shape()),
-                  errors::InvalidArgument(
-                      input_names[i], " must be a scalar, got shape ",
-                      ctx->input(i).shape().ShortDebugString()));
+      OP_REQUIRES(ctx, IsLegacyScalar(ctx->input(i).shape()),
+                  errors::InvalidArgument(input_names[i],
+                                          " must be a scalar, got shape ",
+                                          ctx->input(i).shape().DebugString()));
     }
     Tensor* out = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({}), &out));

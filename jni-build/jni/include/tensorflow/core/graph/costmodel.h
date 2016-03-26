@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/graph/types.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
+#include "tensorflow/core/platform/macros.h"
 
 namespace tensorflow {
 typedef std::unordered_map<string, int32> NodeNameToCostIdMap;
@@ -94,7 +95,7 @@ class CostModel {
   // Check that an estimate is available for every OP node in graph.
   void CheckInitialized(const Graph& graph) const;
 
-  // Helper routines to encapsulate static estimatation heuristics
+  // Helper routines to encapsulate static estimation heuristics
 
   // Compute an estimate of the time to copy "b" bytes over the network,
   // given a fixed cost of "network_latency_millis" milliseconds and

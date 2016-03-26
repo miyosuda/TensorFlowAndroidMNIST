@@ -25,6 +25,7 @@ operators to your graph.
 @@truediv
 @@floordiv
 @@mod
+@@cross
 
 ## Basic Math Functions
 
@@ -49,6 +50,9 @@ mathematical functions to your graph.
 @@minimum
 @@cos
 @@sin
+@@lgamma
+@@erf
+@@erfc
 
 ## Matrix Math Functions
 
@@ -72,6 +76,15 @@ mathematical functions for matrices to your graph.
 
 @@self_adjoint_eig
 @@batch_self_adjoint_eig
+
+@@matrix_solve
+@@batch_matrix_solve
+
+@@matrix_triangular_solve
+@@batch_matrix_triangular_solve
+
+@@matrix_solve_ls
+@@batch_matrix_solve_ls
 
 ## Complex Number Functions
 
@@ -132,6 +145,7 @@ tf.segment_sum(c, tf.constant([0, 0, 1]))
 
 @@sparse_segment_sum
 @@sparse_segment_mean
+@@sparse_segment_sqrt_n
 
 
 ## Sequence Comparison and Indexing
@@ -156,11 +170,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow.python.platform
-
 import numpy as np
 import six.moves
 
+from tensorflow.python.client import graph_util
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
@@ -172,7 +185,7 @@ from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import gen_state_ops
 # pylint: disable=wildcard-import,undefined-variable
 from tensorflow.python.ops.gen_math_ops import *
-
+# pylint: enable=wildcard-import
 
 # Aliases for some automatically-generated names.
 argmax = gen_math_ops.arg_max
@@ -205,6 +218,33 @@ def abs(x, name=None):
       return gen_math_ops.complex_abs(x, name=name)
     return gen_math_ops._abs(x, name=name)
 
+
+def scalar_mul(scalar, x):
+  """Multiplies a scalar times a `Tensor` or `IndexedSlices` object.
+
+  Intended for use in gradient code which might deal with `IndexedSlices`
+  objects, which are easy to multiply by a scalar but more expensive to
+  multiply with arbitrary tensors.
+
+  Args:
+    scalar: A 0-D scalar `Tensor`. Must have known shape.
+    x: A `Tensor` or `IndexedSlices` to be scaled.
+
+  Returns:
+    `scalar * x` of the same type (`Tensor` or `IndexedSlices`) as `x`.
+
+  Raises:
+    ValueError: if scalar is not a 0-D `scalar`.
+  """
+  scalar = ops.convert_to_tensor(scalar, dtype=x.dtype, name="scalar")
+  shape = scalar.get_shape()
+  if shape.ndims == 0:
+    if isinstance(x, ops.IndexedSlices):
+      return ops.IndexedSlices(scalar * x.values, x.indices, x.dense_shape)
+    else:
+      return scalar * x
+  else:
+    raise ValueError("Only scalar multiply works, got shape %s" % shape)
 
 
 def pow(x, y, name=None):
@@ -540,6 +580,7 @@ _OverrideBinaryOperatorHelper(div, "div")
 _OverrideBinaryOperatorHelper(truediv, "truediv")
 _OverrideBinaryOperatorHelper(floordiv, "floordiv")
 _OverrideBinaryOperatorHelper(mod, "mod")
+_OverrideBinaryOperatorHelper(pow, "pow")
 
 
 def logical_xor(x, y, name="LogicalXor"):
@@ -598,9 +639,9 @@ def range(start, limit=None, delta=1, name="range"):
 
 @ops.RegisterShape("Range")
 def _RangeShape(op):
-  start_value = tensor_util.ConstantValue(op.inputs[0])
-  limit_value = tensor_util.ConstantValue(op.inputs[1])
-  delta_value = tensor_util.ConstantValue(op.inputs[2])
+  start_value = tensor_util.constant_value(op.inputs[0])
+  limit_value = tensor_util.constant_value(op.inputs[1])
+  delta_value = tensor_util.constant_value(op.inputs[2])
   if start_value is None or limit_value is None or delta_value is None:
     return [tensor_shape.vector(None)]
   else:
@@ -643,7 +684,7 @@ def reduce_sum(input_tensor, reduction_indices=None, keep_dims=False,
 
   Args:
     input_tensor: The tensor to reduce. Should have numeric type.
-    reduction_indices: The dimensions to reduce. If `None` (the defaut),
+    reduction_indices: The dimensions to reduce. If `None` (the default),
       reduces all dimensions.
     keep_dims: If true, retains reduced dimensions with length 1.
     name: A name for the operation (optional).
@@ -680,7 +721,7 @@ def reduce_mean(input_tensor, reduction_indices=None, keep_dims=False,
 
   Args:
     input_tensor: The tensor to reduce. Should have numeric type.
-    reduction_indices: The dimensions to reduce. If `None` (the defaut),
+    reduction_indices: The dimensions to reduce. If `None` (the default),
       reduces all dimensions.
     keep_dims: If true, retains reduced dimensions with length 1.
     name: A name for the operation (optional).
@@ -707,7 +748,7 @@ def reduce_prod(input_tensor, reduction_indices=None, keep_dims=False,
 
   Args:
     input_tensor: The tensor to reduce. Should have numeric type.
-    reduction_indices: The dimensions to reduce. If `None` (the defaut),
+    reduction_indices: The dimensions to reduce. If `None` (the default),
       reduces all dimensions.
     keep_dims: If true, retains reduced dimensions with length 1.
     name: A name for the operation (optional).
@@ -734,7 +775,7 @@ def reduce_min(input_tensor, reduction_indices=None, keep_dims=False,
 
   Args:
     input_tensor: The tensor to reduce. Should have numeric type.
-    reduction_indices: The dimensions to reduce. If `None` (the defaut),
+    reduction_indices: The dimensions to reduce. If `None` (the default),
       reduces all dimensions.
     keep_dims: If true, retains reduced dimensions with length 1.
     name: A name for the operation (optional).
@@ -761,7 +802,7 @@ def reduce_max(input_tensor, reduction_indices=None, keep_dims=False,
 
   Args:
     input_tensor: The tensor to reduce. Should have numeric type.
-    reduction_indices: The dimensions to reduce. If `None` (the defaut),
+    reduction_indices: The dimensions to reduce. If `None` (the default),
       reduces all dimensions.
     keep_dims: If true, retains reduced dimensions with length 1.
     name: A name for the operation (optional).
@@ -798,7 +839,7 @@ def reduce_all(input_tensor, reduction_indices=None, keep_dims=False,
 
   Args:
     input_tensor: The boolean tensor to reduce.
-    reduction_indices: The dimensions to reduce. If `None` (the defaut),
+    reduction_indices: The dimensions to reduce. If `None` (the default),
       reduces all dimensions.
     keep_dims: If true, retains reduced dimensions with length 1.
     name: A name for the operation (optional).
@@ -835,7 +876,7 @@ def reduce_any(input_tensor, reduction_indices=None, keep_dims=False,
 
   Args:
     input_tensor: The boolean tensor to reduce.
-    reduction_indices: The dimensions to reduce. If `None` (the defaut),
+    reduction_indices: The dimensions to reduce. If `None` (the default),
       reduces all dimensions.
     keep_dims: If true, retains reduced dimensions with length 1.
     name: A name for the operation (optional).
@@ -914,6 +955,35 @@ batch_matmul = gen_math_ops._batch_mat_mul
 
 ops.RegisterShape("MatMul")(common_shapes.matmul_shape)
 ops.RegisterShape("SparseMatMul")(common_shapes.matmul_shape)
+
+
+@ops.RegisterStatistics("MatMul", "flops")
+def _calc_mat_mul_flops(graph, node):
+  """Calculates the compute resources needed for MatMul."""
+  transpose_a = node.attr["transpose_a"].b
+  a_shape = graph_util.tensor_shape_from_node_def_name(graph, node.input[0])
+  a_shape.assert_is_fully_defined()
+  if transpose_a:
+    k = int(a_shape[0])
+  else:
+    k = int(a_shape[1])
+  output_shape = graph_util.tensor_shape_from_node_def_name(graph, node.name)
+  output_shape.assert_is_fully_defined()
+  output_count = np.prod(output_shape.as_list())
+  return ops.OpStats("flops", (k * output_count * 2))
+
+
+@ops.RegisterStatistics("MatMul", "weight_parameters")
+def _calc_mat_mul_weight_parameters(graph, node):
+  """Calculates the on-disk size of the weights for MatMul."""
+  # We assume here that the weights are always in the second input to the op,
+  # which is generally true by convention for fully-connected layers, but not
+  # enforced or checked.
+  weights_shape = graph_util.tensor_shape_from_node_def_name(graph,
+                                                             node.input[1])
+  weights_shape.assert_is_fully_defined()
+  return ops.OpStats("weight_parameters",
+                     (int(weights_shape[1]) * int(weights_shape[0])))
 
 
 def _as_indexed_slices(x):
@@ -1050,7 +1120,7 @@ def _BatchMatMulShape(op):
   adj_a = op.get_attr("adj_x")
   b_shape = op.inputs[1].get_shape()
   adj_b = op.get_attr("adj_y")
-  if not a_shape.is_fully_defined() or not b_shape.is_fully_defined():
+  if a_shape.dims is None and b_shape.dims is None:
     return [tensor_shape.unknown_shape()]
   batch_dims = a_shape[:-2].merge_with(b_shape[:-2])
   output_rows = a_shape[-1] if adj_a else a_shape[-2]
@@ -1097,10 +1167,62 @@ def tanh(x, name=None):
     return gen_math_ops._tanh(x, name=name)
 
 
+def lgamma(x, name=None):
+  """Computes `ln(|gamma(x)|)` element-wise.
+
+  Args:
+    x: A Tensor with type `float`, `double`, `int32`, `int64`,
+      or `qint32`.
+    name: A name for the operation (optional).
+
+  Returns:
+    A Tensor with the same type as `x` if `x.dtype != qint32` otherwise
+      the return type is `quint8`.
+  """
+  with ops.op_scope([x], name, "Lgamma") as name:
+    x = ops.convert_to_tensor(x, name="x")
+    return gen_math_ops._lgamma(x, name=name)
+
+
+def erf(x, name=None):
+  """Computes Gauss error function of `x` element-wise.
+
+  Args:
+    x: A Tensor with type `float`, `double`, `int32`, `int64`,
+      or `qint32`.
+    name: A name for the operation (optional).
+
+  Returns:
+    A Tensor with the same type as `x` if `x.dtype != qint32` otherwise
+      the return type is `quint8`.
+  """
+  with ops.op_scope([x], name, "Erf") as name:
+    x = ops.convert_to_tensor(x, name="x")
+    return gen_math_ops._erf(x, name=name)
+
+
+def erfc(x, name=None):
+  """Computes complementary error function of `x` element-wise.
+
+  Args:
+    x: A Tensor with type `float`, `double`, `int32`, `int64`,
+      or `qint32`.
+    name: A name for the operation (optional).
+
+  Returns:
+    A Tensor with the same type as `x` if `x.dtype != qint32` otherwise
+      the return type is `quint8`.
+  """
+  with ops.op_scope([x], name, "Erfc") as name:
+    x = ops.convert_to_tensor(x, name="x")
+    return gen_math_ops._erfc(x, name=name)
+
+
 ops.RegisterShape("Abs")(common_shapes.unchanged_shape)
 ops.RegisterShape("Ceil")(common_shapes.unchanged_shape)
 ops.RegisterShape("Conj")(common_shapes.unchanged_shape)
 ops.RegisterShape("Cos")(common_shapes.unchanged_shape)
+ops.RegisterShape("Cross")(common_shapes.unchanged_shape)
 ops.RegisterShape("Exp")(common_shapes.unchanged_shape)
 ops.RegisterShape("Floor")(common_shapes.unchanged_shape)
 ops.RegisterShape("Imag")(common_shapes.unchanged_shape)
@@ -1119,6 +1241,9 @@ ops.RegisterShape("Sqrt")(common_shapes.unchanged_shape)
 ops.RegisterShape("Square")(common_shapes.unchanged_shape)
 ops.RegisterShape("Sigmoid")(common_shapes.unchanged_shape)
 ops.RegisterShape("Tanh")(common_shapes.unchanged_shape)
+ops.RegisterShape("Lgamma")(common_shapes.unchanged_shape)
+ops.RegisterShape("Erf")(common_shapes.unchanged_shape)
+ops.RegisterShape("Erfc")(common_shapes.unchanged_shape)
 ops.RegisterShape("Cast")(common_shapes.unchanged_shape)
 ops.RegisterShape("ComplexAbs")(common_shapes.unchanged_shape)
 ops.RegisterShape("FFT2D")(common_shapes.unchanged_shape)
@@ -1197,10 +1322,27 @@ def _AddNShape(op):
 
 @ops.RegisterShape("Select")
 def _SelectShape(op):
-  # All three inputs must have the same shape.
-  return [op.inputs[0].get_shape()
-          .merge_with(op.inputs[1].get_shape())
-          .merge_with(op.inputs[2].get_shape())]
+  """Shape function for SelectOp."""
+  # The inputs 'then' and 'else' must have the same shape.
+  # The input 'cond' must either have the same shape as 'then' and
+  # 'else', or be a vector if 'then' and 'else' are at least vectors.
+  c_shape = op.inputs[0].get_shape()
+  t_shape = op.inputs[1].get_shape()
+  e_shape = op.inputs[2].get_shape()
+  t_e_shape = t_shape.merge_with(e_shape)
+  c_shape_list = c_shape.as_list() if c_shape.ndims is not None else None
+  t_e_shape_list = t_e_shape.as_list() if t_e_shape.ndims is not None else None
+  if c_shape_list is not None and t_e_shape_list is not None:
+    if len(c_shape_list) != 1:
+      # If the rank of 'cond' is != 1, the shape must match 'then' and 'else'
+      t_e_shape = t_e_shape.merge_with(c_shape)
+    if t_e_shape_list:
+      # If then and else are not scalars, then cond must be at least
+      # a vector, and its first value must match that of 'else'
+      c_shape = c_shape.with_rank_at_least(1)
+      if len(c_shape.as_list()) == 1:
+        c_shape.merge_with(tensor_shape.vector(t_e_shape_list[0]))
+  return [t_e_shape]
 
 
 @ops.RegisterShape("ArgMax")
@@ -1215,7 +1357,7 @@ def _ArgOpShape(op):
   elif input_shape.ndims <= 1:
     return [tensor_shape.scalar()]
 
-  dimension = tensor_util.ConstantValue(op.inputs[1])
+  dimension = tensor_util.constant_value(op.inputs[1])
   if dimension is None:
     return [tensor_shape.unknown_shape(ndims=input_shape.ndims - 1)]
   elif 0 <= dimension and dimension < input_shape.ndims:
@@ -1241,7 +1383,7 @@ def _ArgOpShape(op):
 def _ReductionShape(op):
   """Common shape function for reduction ops."""
   input_shape = op.inputs[0].get_shape()
-  reduction_indices = tensor_util.ConstantValue(op.inputs[1])
+  reduction_indices = tensor_util.constant_value(op.inputs[1])
   keep_dims = op.get_attr("keep_dims")
   if reduction_indices is None or input_shape.ndims is None:
     if keep_dims:
@@ -1285,6 +1427,7 @@ def _SegmentReductionShape(op):
 
 
 @ops.RegisterShape("SparseSegmentMean")
+@ops.RegisterShape("SparseSegmentSqrtN")
 @ops.RegisterShape("SparseSegmentSum")
 def _SparseSegmentReductionShape(op):
   """Common shape function for sparse segment reduction ops."""
@@ -1298,19 +1441,24 @@ def _SparseSegmentReductionShape(op):
 
 
 @ops.RegisterShape("SparseSegmentMeanGrad")
-def _SparseSegmentMeanGradShape(op):
-  """Shape function for the SparseSegmentMeanGrad op."""
+@ops.RegisterShape("SparseSegmentSqrtNGrad")
+
+
+# pylint: disable=invalid-name
+def _SparseSegmentReductionGradShape(op):
+  """Shape function for the SparseSegment[Mean|SqrtN]Grad ops."""
   input_shape = op.inputs[0].get_shape()
   indices_shape = op.inputs[1].get_shape().with_rank(1)
   unused_segment_ids_shape = op.inputs[2].get_shape().merge_with(indices_shape)
   unused_output_dim0_shape = op.inputs[3].get_shape().merge_with(
       tensor_shape.scalar())
-  output_dim0 = tensor_util.ConstantValue(op.inputs[3])
+  output_dim0 = tensor_util.constant_value(op.inputs[3])
   if output_dim0 is not None:
     dim0 = output_dim0[0]
   else:
     dim0 = None
   return [tensor_shape.TensorShape([dim0]).concatenate(input_shape[1:])]
+# pylint: enable=invalid-name
 
 
 @ops.RegisterShape("UnsortedSegmentSum")
@@ -1322,12 +1470,12 @@ def _UnsortedSegmentSumShape(op):
   if mid is None:
     return [tensor_shape.unknown_shape()]
   else:
-    num_segments = tensor_util.ConstantValue(op.inputs[2])
+    num_segments = tensor_util.constant_value(op.inputs[2])
     return [tensor_shape.TensorShape([num_segments]).concatenate(
         data_shape[mid:])]
 
 
 @ops.RegisterShape("LinSpace")
 def _LinspaceShape(op):
-  num = tensor_util.ConstantValue(op.inputs[2])
+  num = tensor_util.constant_value(op.inputs[2])
   return [tensor_shape.vector(num)]

@@ -16,18 +16,20 @@ limitations under the License.
 #ifndef TENSORFLOW_FRAMEWORK_OP_H_
 #define TENSORFLOW_FRAMEWORK_OP_H_
 
-#include <functional>
 #include <unordered_map>
 
+#include <vector>
 #include "tensorflow/core/framework/op_def.pb.h"
 #include "tensorflow/core/framework/op_def_builder.h"
 #include "tensorflow/core/framework/op_def_util.h"
+#include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/platform/port.h"
+#include "tensorflow/core/platform/macros.h"
+#include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/thread_annotations.h"
-#include "tensorflow/core/public/status.h"
+#include "tensorflow/core/platform/types.h"
 
 namespace tensorflow {
 
@@ -65,12 +67,12 @@ class OpRegistry : public OpRegistryInterface {
   // we defer calling func() until the first call to LookUp() or
   // Export() (if one of those has already been called, func() is
   // called immediately).
-  void Register(std::function<OpDef(void)> func);
+  void Register(const OpDef& op_def);
 
   const OpDef* LookUp(const string& op_type_name,
                       Status* status) const override;
 
-  // Fills *ops with all registered OpDefss (except those with names
+  // Fills *ops with all registered OpDefs (except those with names
   // starting with '_' if include_internal == false).
   void Export(bool include_internal, OpList* ops) const;
 
@@ -80,6 +82,9 @@ class OpRegistry : public OpRegistryInterface {
 
   // A singleton available at startup.
   static OpRegistry* Global();
+
+  // Get all registered ops.
+  void GetRegisteredOps(std::vector<OpDef>* op_defs);
 
  private:
   // Ensures that all the functions in deferred_ get called, their OpDef's
@@ -94,10 +99,29 @@ class OpRegistry : public OpRegistryInterface {
 
   mutable mutex mu_;
   // Functions in deferred_ may only be called with mu_ held.
-  mutable std::vector<std::function<OpDef(void)>> deferred_ GUARDED_BY(mu_);
+  mutable std::vector<OpDef> deferred_ GUARDED_BY(mu_);
   mutable std::unordered_map<string, OpDef*> registry_ GUARDED_BY(mu_);
   mutable bool initialized_ GUARDED_BY(mu_);
 };
+
+// An adapter to allow an OpList to be used as an OpRegistryInterface.
+class OpListOpRegistry : public OpRegistryInterface {
+ public:
+  // Does not take ownership of op_list, *op_list must outlive *this.
+  OpListOpRegistry(const OpList* op_list);
+  ~OpListOpRegistry() override {}
+  const OpDef* LookUp(const string& op_type_name,
+                      Status* status) const override;
+
+ private:
+  std::unordered_map<string, const OpDef*> index_;
+};
+
+// Treats 'registry_ptr' as a pointer to OpRegistry, and calls
+// registry_ptr->Register(op_def) for each op_def that has been registered with
+// the current library's global op registry (obtained by calling
+// OpRegistry::Global().
+extern "C" void RegisterOps(void* registry_ptr);
 
 // Support for defining the OpDef (specifying the semantics of the Op and how
 // it should be created) and registering it in the OpRegistry::Global()

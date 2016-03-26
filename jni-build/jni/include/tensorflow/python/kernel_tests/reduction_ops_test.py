@@ -18,8 +18,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow.python.platform
-
 import numpy as np
 import tensorflow as tf
 
@@ -123,8 +121,8 @@ class SumReductionTest(tf.test.TestCase):
 
   def testInt32Reduce1D(self):
     np_arr = np.arange(1, 6).reshape([5]).astype(np.int32)
-    self._compare(np_arr, [], False)
-    self._compare(np_arr, [0], False)
+    self._compareAll(np_arr, [])
+    self._compareAll(np_arr, [0])
 
   def testComplex64Reduce1D(self):
     np_arr = np.arange(1, 6).reshape([5]).astype(np.complex64)
@@ -173,6 +171,28 @@ class SumReductionTest(tf.test.TestCase):
 
   def testGradient4(self):
     self._compareGradient([2, 3, 4, 2], [], None)
+
+  def testHighRank(self):
+    # Do a bunch of random high dimensional reductions
+    np.random.seed(42)
+    for _ in range(20):
+      rank = np.random.randint(4, 10 + 1)
+      axes, = np.nonzero(np.random.randint(2, size=rank))
+      shape = tuple(np.random.randint(1, 3 + 1, size=rank))
+      data = np.random.randint(1024, size=shape)
+      self._compareAll(data, axes)
+    # Check some particular axis patterns
+    for rank in 4, 7, 10:
+      shape = tuple(np.random.randint(1, 3 + 1, size=rank))
+      data = np.random.randint(1024, size=shape)
+      for axes in ([], np.arange(rank), np.arange(0, rank, 2),
+                   np.arange(1, rank, 2)):
+        self._compareAll(data, axes)
+
+  def testExpand(self):
+    # Reduce an empty tensor to a nonempty tensor
+    x = np.zeros((5, 0))
+    self._compareAll(x, [1])
 
 
 class MeanReductionTest(tf.test.TestCase):

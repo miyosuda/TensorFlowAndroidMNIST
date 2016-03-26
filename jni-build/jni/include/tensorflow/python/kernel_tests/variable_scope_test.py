@@ -18,8 +18,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow.python.platform
-
 import tensorflow as tf
 
 from tensorflow.python.ops import variable_scope
@@ -69,6 +67,23 @@ class VariableStoreTest(tf.test.TestCase):
           w = variable_scope.get_variable("w", [])
           sess.run(tf.initialize_variables([w]))
           self.assertAllClose(w.eval(), 0.3)
+
+  def testIntializeFromValue(self):
+    with self.test_session() as sess:
+      init = tf.constant(0.1)
+      w = variable_scope.get_variable("v", initializer=init)
+      sess.run(tf.initialize_variables([w]))
+      self.assertAllClose(w.eval(), 0.1)
+
+      with self.assertRaisesRegexp(ValueError, "shape"):
+        # We disallow explicit shape specification when initializer is constant.
+        variable_scope.get_variable("u", [1], initializer=init)
+
+      with variable_scope.variable_scope("foo", initializer=init):
+        # Constant initializer can be passed through scopes if needed.
+        v = variable_scope.get_variable("v")
+        sess.run(tf.initialize_variables([v]))
+        self.assertAllClose(v.eval(), 0.1)
 
   def testControlDeps(self):
     with self.test_session() as sess:

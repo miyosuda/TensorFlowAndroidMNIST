@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-# pylint: disable=wildcard-import,unused-import,g-bad-import-order
+# pylint: disable=unused-import,g-bad-import-order
 """## Activation Functions
 
 The activation ops provide different types of nonlinearities for use in neural
@@ -55,7 +55,7 @@ strided according to the `strides` argument.  `strides = [1, 1, 1, 1]` applies
 the filter to a patch at every offset, `strides = [1, 2, 2, 1]` applies the
 filter to every other image patch in each dimension, etc.
 
-Ignoring channels for the moment, and assume that the the 4-D `input` has shape
+Ignoring channels for the moment, and assume that the 4-D `input` has shape
 `[batch, in_height, in_width, ...]` and the 4-D `filter` has shape
 `[filter_height, filter_width, ...]`, then the spatial semantics of the
 convolution ops are as follows: first, according to the padding scheme chosen
@@ -63,7 +63,7 @@ as `'SAME'` or `'VALID'`, the output size and the padding pixels are computed.
 For the `'SAME'` padding, the output height and width are computed as:
 
     out_height = ceil(float(in_height) / float(strides[1]))
-    out_width  = ceil(float(in_width) / float(stides[2]))
+    out_width  = ceil(float(in_width) / float(strides[2]))
 
 and the padding on the top and left are computed as:
 
@@ -85,7 +85,7 @@ same number of pixels on both sides.
 For the `'VALID`' padding, the output height and width are computed as:
 
     out_height = ceil(float(in_height - filter_height + 1) / float(strides[1]))
-    out_width  = ceil(float(in_width - filter_width + 1) / float(stides[2]))
+    out_width  = ceil(float(in_width - filter_width + 1) / float(strides[2]))
 
 and the padding values are always zero. The output is then computed as
 
@@ -106,6 +106,7 @@ concatenated.
 @@conv2d
 @@depthwise_conv2d
 @@separable_conv2d
+@@conv2d_transpose
 
 ## Pooling
 
@@ -150,6 +151,7 @@ TensorFlow provides several operations that help you perform classification.
 @@sigmoid_cross_entropy_with_logits
 @@softmax
 @@softmax_cross_entropy_with_logits
+@@sparse_softmax_cross_entropy_with_logits
 
 ## Embeddings
 
@@ -206,6 +208,7 @@ from __future__ import division
 from __future__ import print_function
 
 from six.moves import xrange  # pylint: disable=redefined-builtin
+
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
@@ -228,10 +231,12 @@ from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.ops.math_ops import tanh
 
 # Bring more nn-associated functionality into this package.
+# pylint: disable=wildcard-import
 from tensorflow.python.ops.nn_ops import *
 from tensorflow.python.ops.candidate_sampling_ops import *
 from tensorflow.python.ops.embedding_ops import *
 from tensorflow.python.ops.rnn import *
+# pylint: enable=wildcard-import
 
 
 def sigmoid_cross_entropy_with_logits(logits, targets, name=None):
@@ -244,7 +249,12 @@ def sigmoid_cross_entropy_with_logits(logits, targets, name=None):
 
   For brevity, let `x = logits`, `z = targets`.  The logistic loss is
 
-      x - x * z + log(1 + exp(-x))
+        z * -log(sigmoid(x)) + (1 - z) * -log(1 - sigmoid(x))
+      = z * -log(1 / (1 + exp(-x))) + (1 - z) * -log(exp(-x) / (1 + exp(-x)))
+      = z * log(1 + exp(-x)) + (1 - z) * (-log(exp(-x)) + log(1 + exp(-x)))
+      = z * log(1 + exp(-x)) + (1 - z) * (x + log(1 + exp(-x))
+      = (1 - z) * x + log(1 + exp(-x))
+      = x - x * z + log(1 + exp(-x))
 
   To ensure stability and avoid overflow, the implementation uses
 
@@ -485,7 +495,7 @@ def separable_conv2d(input, depthwise_filter, pointwise_filter, strides,
                          padding="VALID", name=name)
 
 
-def moments(x, axes, name=None):
+def moments(x, axes, name=None, keep_dims=False):
   """Calculate the mean and variance of `x`.
 
   The mean and variance are calculated by aggregating the contents of `x`
@@ -500,6 +510,7 @@ def moments(x, axes, name=None):
     x: A `Tensor`.
     axes: array of ints.  Axes along which to compute mean and
       variance.
+    keep_dims: produce moments with the same dimensionality as the input.
     name: Name used to scope the operations that compute the moments.
 
   Returns:
@@ -521,7 +532,7 @@ def moments(x, axes, name=None):
       for d in set(axes):
         divisor *= math_ops.cast(x_dynamic_shape[d], x.dtype)
       divisor = math_ops.inv(divisor, name="divisor")
-    axes = constant_op.constant(axes, name="axes")
+    constant_axes = constant_op.constant(axes, name="axes")
     # Note: We do not use Mean here because it is very slow on GPU.
     # Note 2: The expression below is potentially more stable.
     # It is however a bit slower and stability doesn't appear to be an issue.
@@ -529,10 +540,27 @@ def moments(x, axes, name=None):
     # var = math_ops.reduce_sum(math_ops.mul(math_ops.square(x - mean),
     #                                        divisor), axes,
     #                    name="variance")
-    mean = math_ops.mul(math_ops.reduce_sum(x, axes), divisor, name="mean")
-    var = math_ops.mul(math_ops.reduce_sum(math_ops.square(x - mean), axes),
-                       divisor, name="variance")
-    return mean, var
+    mean = math_ops.mul(
+        math_ops.reduce_sum(x,
+                            constant_axes,
+                            keep_dims=True),
+        divisor,
+        name="mean")
+    # Give x-mean a specific name, so the caller might take advantage of it.
+    # The caller should have a fallback plan, however: this tensor may not be
+    # available if this function implementation changes.
+    x_centered = math_ops.sub(x, mean, name="x_centered")
+    var = math_ops.mul(
+        math_ops.reduce_sum(
+            math_ops.square(x_centered),
+            constant_axes,
+            keep_dims=keep_dims),
+        divisor,
+        name="variance")
+    if keep_dims:
+      return mean, var
+    else:
+      return array_ops.squeeze(mean, squeeze_dims=axes), var
 
 
 def _sum_rows(x):
@@ -686,7 +714,8 @@ def _compute_sampled_logits(weights, biases, inputs, labels, num_sampled,
       if sampled_logits.dtype != acc_weights.dtype:
         acc_weights = math_ops.cast(acc_weights, sampled_logits.dtype)
       sampled_logits += sparse_ops.sparse_to_dense(
-          sparse_indices, sampled_logits_shape, acc_weights, 0.0)
+          sparse_indices, sampled_logits_shape, acc_weights,
+          default_value=0.0, validate_indices=False)
 
     if subtract_log_q:
       # Subtract log of Q(l), prior probability that l appears in sampled.
@@ -795,7 +824,8 @@ def sampled_softmax_loss(weights, biases, inputs, labels, num_sampled,
   See our [Candidate Sampling Algorithms Reference]
   (../../extras/candidate_sampling.pdf)
 
-  Also see Section 3 of http://arxiv.org/abs/1412.2007 for the math.
+  Also see Section 3 of [Jean et al., 2014](http://arxiv.org/abs/1412.2007)
+  ([pdf](http://arxiv.org/pdf/1412.2007.pdf)) for the math.
 
   Args:
     weights: A `Tensor` of shape `[num_classes, dim]`, or a list of `Tensor`

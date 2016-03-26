@@ -18,8 +18,9 @@ limitations under the License.
 
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/lib/core/refcount.h"
-#include "tensorflow/core/platform/port.h"
+#include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/thread_annotations.h"
+#include "tensorflow/core/platform/types.h"
 
 namespace tensorflow {
 
@@ -44,11 +45,16 @@ class TrackingAllocator : public Allocator {
  public:
   explicit TrackingAllocator(Allocator* allocator);
   string Name() override { return allocator_->Name(); }
-  void* AllocateRaw(size_t alignment, size_t num_bytes) override;
+  void* AllocateRaw(size_t alignment, size_t num_bytes) override {
+    return AllocateRaw(alignment, num_bytes, AllocationAttributes());
+  }
+  void* AllocateRaw(size_t alignment, size_t num_bytes,
+                    const AllocationAttributes& allocation_attr) override;
   void DeallocateRaw(void* ptr) override;
   bool TracksAllocationSizes() override;
   size_t RequestedSize(void* ptr) override;
   size_t AllocatedSize(void* ptr) override;
+  int64 AllocationId(void* ptr) override;
 
   // If the underlying allocator tracks allocation sizes, this returns
   // a pair where the first value is the total number of bytes

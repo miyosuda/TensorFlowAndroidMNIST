@@ -20,7 +20,7 @@ TensorFlow session.
 ### Load MNIST Data
 
 For your convenience, we've included
-[a script](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/examples/tutorials/mnist/input_data.py)
+[a script](https://www.tensorflow.org/code/tensorflow/examples/tutorials/mnist/input_data.py)
 which automatically downloads and imports the MNIST dataset. It will create a
 directory `'MNIST_data'` in which to store the data files.
 
@@ -47,7 +47,7 @@ It allows you to interleave operations which build a
 [computation graph](../../../get_started/basic_usage.md#the-computation-graph)
 with ones that run the graph.
 This is particularly convenient when working in interactive contexts like
-iPython.
+IPython.
 If you are not using an `InteractiveSession`, then you should build
 the entire computation graph before starting a session and [launching the
 graph](../../../get_started/basic_usage.md#launching-the-graph-in-a-session).
@@ -94,8 +94,8 @@ We start building the computation graph by creating nodes for the
 input images and target output classes.
 
 ```python
-x = tf.placeholder("float", shape=[None, 784])
-y_ = tf.placeholder("float", shape=[None, 10])
+x = tf.placeholder(tf.float32, shape=[None, 784])
+y_ = tf.placeholder(tf.float32, shape=[None, 10])
 ```
 
 Here `x` and `y_` aren't specific values. Rather, they are each a `placeholder`
@@ -220,7 +220,7 @@ cast to floating point numbers and then take the mean. For example,
 `[True, False, True, True]` would become `[1,0,1,1]` which would become `0.75`.
 
 ```python
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 ```
 
 Finally, we can evaluate our accuracy on the test data. This should be about
@@ -343,7 +343,7 @@ TensorFlow's `tf.nn.dropout` op automatically handles scaling neuron outputs in
 addition to masking them, so dropout just works without any additional scaling.
 
 ```python
-keep_prob = tf.placeholder("float")
+keep_prob = tf.placeholder(tf.float32)
 h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
 ```
 
@@ -373,7 +373,7 @@ and we will add logging to every 100th iteration in the training process.
 cross_entropy = -tf.reduce_sum(y_*tf.log(y_conv))
 train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
 correct_prediction = tf.equal(tf.argmax(y_conv,1), tf.argmax(y_,1))
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 sess.run(tf.initialize_all_variables())
 for i in range(20000):
   batch = mnist.train.next_batch(50)

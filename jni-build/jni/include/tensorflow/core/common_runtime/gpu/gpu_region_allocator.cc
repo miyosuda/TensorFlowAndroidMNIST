@@ -15,8 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/common_runtime/gpu/gpu_region_allocator.h"
 
-//#include "base/commandlineflags.h"
-#include "tensorflow/stream_executor/multi_platform_manager.h"
+#include <vector>
 #include "tensorflow/core/common_runtime/gpu/gpu_allocator_retry.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_init.h"
 #include "tensorflow/core/lib/core/bits.h"
@@ -25,29 +24,24 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/platform/port.h"
+#include "tensorflow/core/platform/mutex.h"
+#include "tensorflow/core/platform/stream_executor.h"
+#include "tensorflow/core/platform/types.h"
 
-#if defined(PLATFORM_GOOGLE)
-DEFINE_bool(brain_gpu_region_allocator_heap_check_on_destruction, true,
-            "If true, the CUDA gpu manager checks that all allocated "
-            "memory through the GPU memory pool implementation has been "
-            "freed.");
+// If true, the CUDA gpu manager checks that all allocated memory
+// through the GPU memory pool implementation has been freed.
+const bool FLAGS_brain_gpu_region_allocator_heap_check_on_destruction = true;
 
-DEFINE_int64(brain_gpu_region_allocator_region_size, 0,
-             "If > 0, sets the default chunk-size allocatable from GPU memory. "
-             "Else defaults to entire GPU memory.");
-
-#else
-bool FLAGS_brain_gpu_region_allocator_heap_check_on_destruction = true;
-tensorflow::int64 FLAGS_brain_gpu_region_allocator_region_size = 0;
-#endif
+// If > 0, sets the default chunk-size allocatable from GPU memory.
+// Else defaults to entire GPU memory.
+const tensorflow::int64 FLAGS_brain_gpu_region_allocator_region_size = 0;
 
 namespace gpu = ::perftools::gputools;
 
 namespace tensorflow {
 
 GPURegionAllocator::GPURegionAllocator(int device_id, size_t total_bytes)
-    : device_id_(device_id), total_bytes_(total_bytes) {
+    : next_allocation_id_(1), device_id_(device_id), total_bytes_(total_bytes) {
   // Get a pointer to the stream_executor for this device
   stream_exec_ = GPUMachineManager()->ExecutorForDevice(device_id).ValueOrDie();
 
@@ -111,9 +105,9 @@ void* GPURegionAllocator::AllocateRawInternal(size_t alignment,
   CHECK(pool->last);
   Chunk* c = pool->first;
   CHECK(c);
-  CHECK(!c->in_use);
+  CHECK(!c->in_use());
 
-  c->in_use = true;
+  c->allocation_id = next_allocation_id_++;
   // Move c to the back of the queue.
   if (c->next != nullptr) {
     pool->first = c->next;
@@ -157,8 +151,8 @@ void GPURegionAllocator::DeallocateRawInternal(void* ptr) {
 
   Pool* pool = &(pools_[c->size]);
   // Move chunk to head of queue, and mark free.
-  DCHECK(c->in_use);
-  c->in_use = false;
+  DCHECK(c->in_use());
+  c->allocation_id = -1;
   if (c->prev) c->prev->next = c->next;
   if (c->next) c->next->prev = c->prev;
   if (pool->first == c) pool->first = c->next;
@@ -177,7 +171,7 @@ bool GPURegionAllocator::ExpandPool(Pool* pool, size_t chunk_size,
                                     bool dump_log_on_failure) {
   VLOG(1) << "ExpandPool of " << chunk_size << " from " << pool->num_chunks
           << " current members";
-  DCHECK_NE(0, chunk_size);
+  DCHECK_NE(size_t{0}, chunk_size);
   // If chunk_size is < 4096, double the pool size.  Otherwise
   // just increase by one.
   int num_chunks = pool->num_chunks;
@@ -273,7 +267,7 @@ void GPURegionAllocator::CheckForMemoryLeaks() {
     const Pool& p = pool_map.second;
     Chunk* curr_chunk = p.first;
     while (curr_chunk != nullptr) {
-      if (curr_chunk->in_use) {
+      if (curr_chunk->in_use()) {
         errors.push_back(
             strings::StrCat("Unfreed chunk of size ", curr_chunk->size));
       }
@@ -286,7 +280,7 @@ void GPURegionAllocator::CheckForMemoryLeaks() {
 }
 
 // Since there's no merging of chunks once allocated, we want to
-// maximize their reusablity (which argues for fewer, larger sizes),
+// maximize their reusability (which argues for fewer, larger sizes),
 // while minimizing waste (which argues for tight-fitting sizes).
 //
 // The smallest unit of allocation is 256 bytes.
@@ -341,7 +335,7 @@ void GPURegionAllocator::DumpMemoryLog() {
       // Iterate backwards (allocated chunks are last).
       Chunk* curr_chunk = p.last;
       while (curr_chunk != nullptr) {
-        if (curr_chunk->in_use) {
+        if (curr_chunk->in_use()) {
           ++chunks_in_use;
         }
         curr_chunk = curr_chunk->prev;
@@ -381,6 +375,15 @@ size_t GPURegionAllocator::AllocatedSize(void* ptr) {
       << "Asked for allocated size of pointer we never allocated: " << ptr;
   auto c = it->second;
   return c->size;
+}
+
+int64 GPURegionAllocator::AllocationId(void* ptr) {
+  mutex_lock l(lock_);
+  auto it = chunk_map_.find(ptr);
+  CHECK(it != chunk_map_.end())
+      << "Asked for allocation id of pointer we never allocated: " << ptr;
+  Chunk* c = it->second;
+  return c->allocation_id;
 }
 
 }  // namespace tensorflow

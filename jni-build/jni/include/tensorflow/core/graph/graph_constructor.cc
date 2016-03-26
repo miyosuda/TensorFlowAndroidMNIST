@@ -21,6 +21,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/types.h"
+#include "tensorflow/core/framework/versions.h"
 #include "tensorflow/core/graph/algorithm.h"
 #include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/graph/optimizer_cse.h"
@@ -35,7 +36,7 @@ namespace tensorflow {
 
 namespace {
 inline bool IsMerge(const NodeDef& node_def) {
-  return node_def.op() == "Merge";
+  return node_def.op() == "Merge" || node_def.op() == "RefMerge";
 }
 }  // namespace
 
@@ -46,19 +47,11 @@ class GraphConstructor {
   GraphConstructor(const GraphConstructorOptions& opts, const GraphDef* gdef,
                    Graph* g, Status* status)
       : opts_(opts), gdef_(gdef), g_(g), status_(status) {
-    const int version = gdef->version();
-    if (!(TF_GRAPH_DEF_VERSION_MIN <= version &&
-          version <= TF_GRAPH_DEF_VERSION_MAX)) {
-      bool low = version < TF_GRAPH_DEF_VERSION_MAX;
-      *status = errors::InvalidArgument(
-          "GraphDef version ", version, " is ", low ? "no longer" : "not yet",
-          " supported: TensorFlow ", TF_VERSION_STRING, " needs ",
-          TF_GRAPH_DEF_VERSION_MAX, " <= version <= ", TF_GRAPH_DEF_VERSION_MIN,
-          ".  ",
-          low ? "Please regenerate your graph." : "Please upgrade TensorFlow.");
-      return;
-    }
-    g->set_version(gdef->version());
+    *status =
+        CheckVersions(gdef->versions(), TF_GRAPH_DEF_VERSION,
+                      TF_GRAPH_DEF_VERSION_MIN_PRODUCER, "GraphDef", "graph");
+    if (!status->ok()) return;
+    g->set_versions(gdef->versions());
     BuildNodeIndex();
     InitFromEdges();
     Convert();
@@ -150,8 +143,8 @@ void GraphConstructor::BuildNodeIndex() {
       SetNodeError(node_def, "Node name contains invalid characters");
       return;
     }
-    if (!name_index_.insert(std::make_pair(StringPiece(node_def.name()),
-                                           NodeInfo(n)))
+    if (!name_index_
+             .insert(std::make_pair(StringPiece(node_def.name()), NodeInfo(n)))
              .second) {
       SetNodeError(node_def, "Node name is not unique");
       return;
@@ -227,7 +220,7 @@ Node* GraphConstructor::MakeNode(const NodeDef& node_def) {
 static int CountNodes(Graph* g) {
   int nodes = 0;
   for (Node* node : g->nodes()) {
-    VLOG(1) << node;  // Dummy use to avoid compiler warning
+    VLOG(3) << node;  // Dummy use to avoid compiler warning
     nodes++;
   }
   return nodes;
@@ -346,8 +339,8 @@ void GraphConstructor::Convert() {
 
     if (opts_.optimizer_do_cse) {
       if (!back_edges.empty()) {
-        LOG(WARNING) << "Not doing CSE.  We need to figure out how to handle "
-                     << "loops in the CSE phase.";
+        VLOG(1) << "Not doing CSE. We need to figure out how to handle "
+                << "loops in the CSE phase.";
       } else {
         VLOG(1) << "Starting CSE: graph of " << CountNodes(g_) << " nodes";
         OptimizeCSE(g_, opts_.cse_consider_function);
@@ -371,7 +364,42 @@ bool GraphConstructor::TypeValidateEdge(const Edge* edge) {
   return true;
 }
 
+static void SetDoCSE(const OptimizerOptions& optimizer_opt, bool force,
+                     GraphConstructorOptions* graph_opt) {
+  graph_opt->optimizer_do_cse =
+      force || optimizer_opt.do_common_subexpression_elimination();
+}
+
+static void SetDoConstantFolding(const OptimizerOptions& optimizer_opt,
+                                 bool force,
+                                 GraphConstructorOptions* graph_opt) {
+  graph_opt->optimizer_do_constant_folding =
+      force || optimizer_opt.do_constant_folding();
+}
+
 }  // namespace
+
+// ----------------------------------------------------------------------------
+// GraphConstructorOptions functions
+// ----------------------------------------------------------------------------
+
+GraphConstructorOptions::GraphConstructorOptions() {}
+
+GraphConstructorOptions::GraphConstructorOptions(const OptimizerOptions& opts) {
+  // Set the individually specified options first.
+  SetDoCSE(opts, false, this);
+  SetDoConstantFolding(opts, false, this);
+
+  // Set options that the level signifies
+  if (opts.opt_level() == OptimizerOptions::L0) {
+    // No optimizations performed.
+  } else if (opts.opt_level() == OptimizerOptions::L1) {
+    SetDoCSE(opts, true, this);
+  } else if (opts.opt_level() == OptimizerOptions::L2) {
+    SetDoCSE(opts, true, this);
+    SetDoConstantFolding(opts, true, this);
+  }
+}
 
 // ----------------------------------------------------------------------------
 // ConvertGraphDefToGraph
@@ -391,6 +419,9 @@ void CopyGraph(const Graph& src, Graph* dest) {
   for (Node* n : dest->nodes()) {
     CHECK(n->IsSource() || n->IsSink()) << "*dest must be empty";
   }
+
+  // Copy GraphDef versions
+  dest->set_versions(src.versions());
 
   // Copy the nodes
   std::unordered_map<Node*, Node*>

@@ -21,8 +21,6 @@ from __future__ import division
 from __future__ import print_function
 import copy
 
-import tensorflow.python.platform
-
 from tensorflow.core.framework import graph_pb2
 from tensorflow.python.framework import device as pydev
 from tensorflow.python.framework import dtypes
@@ -34,10 +32,10 @@ _VARIABLE_OPS = {
     "AssignAdd",
     "AssignSub",
     "Queue",
-    "RandomParameters",
     "ScatterAdd",
     "ScatterSub",
     "ScatterUpdate",
+    "TruncatedNormal",
     "Variable",
 }
 
@@ -217,3 +215,17 @@ def extract_sub_graph(graph_def, dest_nodes):
     out.node.extend([copy.deepcopy(name_to_node_map[n])])
 
   return out
+
+
+def tensor_shape_from_node_def_name(graph, input_name):
+  """Convenience function to get a shape from a NodeDef's input string."""
+  # To get a tensor, the name must be in the form <input>:<port>, for example
+  # 'Mul:0'. The GraphDef input strings don't always have the port specified
+  # though, so if there isn't a colon we need to add a default ':0' to the end.
+  if ":" not in input_name:
+    canonical_name = input_name + ":0"
+  else:
+    canonical_name = input_name
+  tensor = graph.get_tensor_by_name(canonical_name)
+  shape = tensor.get_shape()
+  return shape

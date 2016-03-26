@@ -16,9 +16,10 @@ limitations under the License.
 #ifndef TENSORFLOW_LIB_CORE_ERRORS_H_
 #define TENSORFLOW_LIB_CORE_ERRORS_H_
 
+#include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/public/status.h"
+#include "tensorflow/core/platform/macros.h"
 
 namespace tensorflow {
 namespace errors {
@@ -32,7 +33,7 @@ template <typename... Args>
 void AppendToMessage(::tensorflow::Status* status, Args... args) {
   *status = ::tensorflow::Status(
       status->code(),
-      strings::StrCat(status->error_message(), "\n\t", args...));
+      ::tensorflow::strings::StrCat(status->error_message(), "\n\t", args...));
 }
 
 // For propagating errors when calling a function.
@@ -57,14 +58,14 @@ void AppendToMessage(::tensorflow::Status* status, Args... args) {
 //   if (errors::IsInvalidArgument(status)) { ... }
 //   switch (status.code()) { case error::INVALID_ARGUMENT: ... }
 
-#define DECLARE_ERROR(FUNC, CONST)                           \
-  template <typename... Args>                                \
-  inline ::tensorflow::Status FUNC(Args... args) {           \
-    return ::tensorflow::Status(::tensorflow::error::CONST,  \
-                                strings::StrCat(args...));   \
-  }                                                          \
-  inline bool Is##FUNC(const ::tensorflow::Status& status) { \
-    return status.code() == ::tensorflow::error::CONST;      \
+#define DECLARE_ERROR(FUNC, CONST)                                       \
+  template <typename... Args>                                            \
+  inline ::tensorflow::Status FUNC(Args... args) {                       \
+    return ::tensorflow::Status(::tensorflow::error::CONST,              \
+                                ::tensorflow::strings::StrCat(args...)); \
+  }                                                                      \
+  inline bool Is##FUNC(const ::tensorflow::Status& status) {             \
+    return status.code() == ::tensorflow::error::CONST;                  \
   }
 
 DECLARE_ERROR(Cancelled, CANCELLED)
@@ -103,19 +104,19 @@ using ::tensorflow::error::OK;
 // }
 
 // Declares an op deprecated, and illegal starting at GraphDef version VERSION
-#define OP_DEPRECATED(CTX, VERSION)                                            \
+#define OP_DEPRECATED(CTX, VERSION, NOTE)                                      \
   if ((CTX)->graph_def_version() >= (VERSION)) {                               \
     ::tensorflow::Status _s(::tensorflow::errors::Unimplemented(               \
         "Op ", (CTX)->op_def().name(),                                         \
         " is not available in GraphDef version ", (CTX)->graph_def_version(),  \
-        ". It has been removed in version ", (VERSION), "."));                 \
+        ". It has been removed in version ", (VERSION), ". ", (NOTE), "."));   \
     VLOG(1) << _s;                                                             \
     (CTX)->SetStatus(_s);                                                      \
     return;                                                                    \
   } else {                                                                     \
     LOG(WARNING) << "Op is deprecated."                                        \
                  << " It will cease to work in GraphDef version " << (VERSION) \
-                 << ".";                                                       \
+                 << ". " << (NOTE) << ".";                                     \
   }
 
 #define OP_REQUIRES(CTX, EXP, STATUS) \

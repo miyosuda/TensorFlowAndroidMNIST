@@ -18,12 +18,12 @@ limitations under the License.
 
 #include <string>
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+#include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_slice.pb.h"
+#include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/core/stringpiece.h"
 #include "tensorflow/core/lib/gtl/inlined_vector.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/public/status.h"
-#include "tensorflow/core/public/tensor_shape.h"
 
 namespace tensorflow {
 
@@ -38,7 +38,7 @@ class TensorSlice {
   // -- from just a dimension (in this case it will create a full slice)
   // -- from an array of pairs of integers.
   // -- from a TensorSliceProto protocol buffer
-  // -- from a string format of "start,lenth:start,length..." where each
+  // -- from a string format of "start,length:start,length..." where each
   //    "start,length" pair represents the slice on one dimension. We allow a
   //    special "-" that means "everything for this dimension". One such example
   //    is:  0,10:-:14,1:-:-

@@ -153,7 +153,7 @@ class ApplyGradientDescentOp : public OpKernel {
         errors::FailedPrecondition(
             "Attempting to use uninitialized variables: ", def().input(0)));
     const Tensor& alpha = ctx->input(1);
-    OP_REQUIRES(ctx, TensorShapeUtils::IsLegacyScalar(alpha.shape()),
+    OP_REQUIRES(ctx, IsLegacyScalar(alpha.shape()),
                 errors::InvalidArgument("alpha is not a scalar: ",
                                         alpha.shape().DebugString()));
     const Tensor& delta = ctx->input(2);
@@ -242,7 +242,7 @@ class ApplyAdagradOp : public OpKernel {
         errors::FailedPrecondition(
             "Attempting to use uninitialized variables: ", def().input(1)));
     const Tensor& lr = ctx->input(2);
-    OP_REQUIRES(ctx, TensorShapeUtils::IsLegacyScalar(lr.shape()),
+    OP_REQUIRES(ctx, IsLegacyScalar(lr.shape()),
                 errors::InvalidArgument("lr is not a scalar: ",
                                         lr.shape().DebugString()));
     const Tensor& grad = ctx->input(3);
@@ -336,7 +336,7 @@ class SparseApplyAdagradOp : public OpKernel {
                 errors::InvalidArgument("var must be at least 1 dimensional"));
 
     const Tensor& lr = ctx->input(2);
-    OP_REQUIRES(ctx, TensorShapeUtils::IsLegacyScalar(lr.shape()),
+    OP_REQUIRES(ctx, IsLegacyScalar(lr.shape()),
                 errors::InvalidArgument("lr is not a scalar: ",
                                         lr.shape().DebugString()));
     const Tensor& grad = ctx->input(3);
@@ -344,10 +344,12 @@ class SparseApplyAdagradOp : public OpKernel {
     OP_REQUIRES(ctx, TensorShapeUtils::IsVector(indices.shape()),
                 errors::InvalidArgument("indices must be one-dimensional"));
 
+    int64 inner_dim = 1;
     for (int d = 1; d < var.dims(); d++) {
       OP_REQUIRES(ctx, var.dim_size(d) == grad.dim_size(d),
                   errors::InvalidArgument(strings::StrCat(
                       "var and grad must match in dimension ", d)));
+      inner_dim *= grad.dim_size(d);
     }
     const Tindex N = indices.dim_size(0);
     OP_REQUIRES(
@@ -356,30 +358,47 @@ class SparseApplyAdagradOp : public OpKernel {
             "grad must be the same size as indices in the first dimension."));
 
     if (N > 0) {
-      const Tindex first_dim_size = var.dim_size(0);
-      // Validate all the indices are in range
-      auto indices_vec = indices.vec<Tindex>();
-      for (Tindex i = 0; i < N; i++) {
-        const Tindex index = indices_vec(i);
-        OP_REQUIRES(ctx, index >= 0 && index < first_dim_size,
-                    errors::InvalidArgument(
-                        strings::StrCat("Index ", index, " at offset ", i,
-                                        " in indices is out of range")));
-      }
+      if (inner_dim > 1) {
+        const Tindex first_dim_size = var.dim_size(0);
+        // Validate all the indices are in range
+        auto indices_vec = indices.vec<Tindex>();
+        for (Tindex i = 0; i < N; i++) {
+          const Tindex index = indices_vec(i);
+          OP_REQUIRES(ctx, index >= 0 && index < first_dim_size,
+                      errors::InvalidArgument(
+                          strings::StrCat("Index ", index, " at offset ", i,
+                                          " in indices is out of range")));
+        }
+        auto var_flat = var.flat_outer_dims<T>();
+        auto accum_flat = accum.flat_outer_dims<T>();
+        auto grad_flat = grad.flat_outer_dims<T>();
+        T lr_scalar = lr.scalar<T>()();
 
-      auto var_flat = var.flat_outer_dims<T>();
-      auto accum_flat = accum.flat_outer_dims<T>();
-      auto grad_flat = grad.flat_outer_dims<T>();
-      T lr_scalar = lr.scalar<T>()();
+        // Note(yonghui): It might be worth multi-threading square() and
+        // rsqrt().
+        for (Tindex i = 0; i < N; i++) {
+          const Tindex index = indices_vec(i);
+          auto a = accum_flat.template chip<0>(index);
+          auto g = grad_flat.template chip<0>(i);
+          auto v = var_flat.template chip<0>(index);
+          a += g.square();
+          v -= g.constant(lr_scalar) * g * a.rsqrt();
+        }
+      } else {
+        CHECK_EQ(1, inner_dim);
+        auto indices_vec = indices.vec<Tindex>();
+        auto var_flat = var.flat<T>();
+        auto accum_flat = accum.flat<T>();
+        auto grad_flat = grad.flat<T>();
+        T lr_scalar = lr.scalar<T>()();
 
-      // Note(yonghui): It might be worth multi-threading square() and rsqrt().
-      for (Tindex i = 0; i < N; i++) {
-        const Tindex index = indices_vec(i);
-        auto a = accum_flat.template chip<0>(index);
-        auto g = grad_flat.template chip<0>(i);
-        auto v = var_flat.template chip<0>(index);
-        a += g.square();
-        v -= g.constant(lr_scalar) * g * a.rsqrt();
+        for (Tindex i = 0; i < N; i++) {
+          const Tindex index = indices_vec(i);
+          T& a = accum_flat(index);
+          const T& g = grad_flat(i);
+          a += g * g;
+          var_flat(index) -= lr_scalar * g / std::sqrt(a);
+        }
       }
     }
     if (use_exclusive_lock_) {

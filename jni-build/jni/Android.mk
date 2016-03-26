@@ -8,10 +8,12 @@ TENSORFLOW_CFLAGS	  := -frtti \
   -ffunction-sections \
   -funwind-tables \
   -no-canonical-prefixes \
+  -fno-canonical-system-headers \
   '-march=armv7-a' \
   '-mfpu=vfpv3-d16' \
   '-mfloat-abi=softfp' \
   '-std=c++11' '-mfpu=neon' -O2 \
+  '-DMIN_LOG_LEVEL=0' \
 
 TENSORFLOW_SRC_FILES := ./tensorflow_jni.cc \
 	./jni_utils.cc \
@@ -33,7 +35,12 @@ LOCAL_LDLIBS    := \
 	$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/libs/$(TARGET_ARCH_ABI)/libsupc++.a \
 	-llog -landroid -lm -ljnigraphics -pthread -no-canonical-prefixes '-march=armv7-a' -Wl,--fix-cortex-a8 -Wl,-S \
 
-LOCAL_C_INCLUDES += $(LOCAL_PATH)/include $(LOCAL_PATH)/genfiles $(LOCAL_PATH)/include/third_party/eigen3
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/include \
+	$(LOCAL_PATH)/genfiles \
+	$(LOCAL_PATH)/include/third_party/eigen3 \
+	$(LOCAL_PATH)/include/external/eigen_archive \
+	$(LOCAL_PATH)/include/external/eigen_archive/eigen-eigen-c5e90d9e764e \
+	$(LOCAL_PATH)/include/google/protobuf/src
 
 NDK_MODULE_PATH := $(call my-dir)
 

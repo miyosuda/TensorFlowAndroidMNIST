@@ -21,8 +21,6 @@ from __future__ import print_function
 
 import itertools
 
-import tensorflow.python.platform
-
 import numpy as np
 import tensorflow as tf
 
@@ -120,6 +118,19 @@ class TrainingOpsTest(TensorFlowTestCase):
       y = np.array(y_val).astype(dtype)
       lr = np.array(2.0).astype(dtype)
       grad_val = [np.arange(10), np.arange(10)]
+      grad = np.array(grad_val).astype(dtype)
+      indices = np.array([0, 2]).astype(index_type)
+      self._testTypesForSparseAdagrad(x, y, lr, grad, indices)
+
+  def testSparseApplyAdagradDim1(self):
+    for (dtype, index_type) in itertools.product(
+        [np.float32, np.float64], [np.int32, np.int64]):
+      x_val = [[1.0], [2.0], [3.0]]
+      y_val = [[4.0], [5.0], [6.0]]
+      x = np.array(x_val).astype(dtype)
+      y = np.array(y_val).astype(dtype)
+      lr = np.array(2.0).astype(dtype)
+      grad_val = [[1.5], [2.5]]
       grad = np.array(grad_val).astype(dtype)
       indices = np.array([0, 2]).astype(index_type)
       self._testTypesForSparseAdagrad(x, y, lr, grad, indices)

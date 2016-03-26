@@ -7,16 +7,19 @@ licenses(["notice"])  # Apache 2.0
 
 exports_files(["LICENSE"])
 
-load("/tensorflow/tensorflow", "tf_cuda_library")
-load("/tensorflow/tensorflow", "tf_gen_op_wrapper_py")
-load("/tensorflow/tensorflow", "py_tests")
-load("/tensorflow/tensorflow", "cuda_py_tests")
-load("/tensorflow/tensorflow", "tf_py_wrap_cc")
-load("/tensorflow/core/platform/default/build_config", "tf_proto_library_py")
+load("//tensorflow:tensorflow.bzl", "tf_cuda_library")
+load("//tensorflow:tensorflow.bzl", "tf_gen_op_wrapper_py")
+load("//tensorflow:tensorflow.bzl", "py_tests")
+load("//tensorflow:tensorflow.bzl", "cuda_py_tests")
+load("//tensorflow:tensorflow.bzl", "tf_py_wrap_cc")
+load("//tensorflow/core:platform/default/build_config.bzl", "tf_proto_library")
+load("//tensorflow/core:platform/default/build_config.bzl", "tf_proto_library_py")
 
 py_library(
     name = "python",
-    srcs = ["__init__.py"],
+    srcs = [
+        "__init__.py",
+    ],
     srcs_version = "PY2AND3",
     visibility = ["//tensorflow:__pkg__"],
     deps = [
@@ -29,6 +32,7 @@ py_library(
         ":platform_test",
         ":summary",
         ":training",
+        "//tensorflow/contrib:contrib_py",
     ],
 )
 
@@ -66,6 +70,20 @@ py_tests(
         ":platform_test",
     ],
     prefix = "google_platform",
+)
+
+cc_library(
+    name = "py_func_lib",
+    srcs = ["lib/core/py_func.cc"],
+    hdrs = [
+        "lib/core/py_func.h",
+    ],
+    deps = [
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//third_party/py/numpy:headers",
+        "//util/python:python_headers",
+    ],
 )
 
 cc_library(
@@ -107,16 +125,27 @@ py_test(
 )
 
 cc_library(
-    name = "python_op_gen_main",
+    name = "python_op_gen",
     srcs = [
         "framework/python_op_gen.cc",
         "framework/python_op_gen.h",
-        "framework/python_op_gen_main.cc",
     ],
     visibility = ["//visibility:public"],
     deps = [
         "//tensorflow/core:framework",
         "//tensorflow/core:protos_cc",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "python_op_gen_main",
+    srcs = [
+        "framework/python_op_gen_main.cc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":python_op_gen",
     ],
 )
 
@@ -126,6 +155,7 @@ py_library(
     srcs = [
         "framework/device.py",
         "framework/dtypes.py",
+        "framework/function.py",
         "framework/op_def_registry.py",
         "framework/ops.py",
         "framework/registry.py",
@@ -154,6 +184,7 @@ py_library(
         "framework/importer.py",
         "framework/random_seed.py",
         "framework/tensor_util.py",
+        "framework/load_library.py",
         # TODO(josh11b): Move this to the framework directory
         "ops/common_shapes.py",
     ],
@@ -210,6 +241,42 @@ py_test(
 )
 
 py_test(
+    name = "contrib_test",
+    srcs = ["framework/contrib_test.py"],
+    main = "framework/contrib_test.py",
+    srcs_version = "PY2AND3",
+    deps = [
+        ":framework_test_lib",
+        "//tensorflow:tensorflow_py",
+    ],
+)
+
+tf_gen_op_wrapper_py(
+    name = "functional_ops",
+    out = "ops/gen_functional_ops.py",
+    hidden = [
+        "SymbolicGradient",
+    ],
+)
+
+py_library(
+    name = "functional_ops_lib",
+    srcs = ["ops/functional_ops.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":functional_ops",
+    ],
+)
+
+cuda_py_tests(
+    name = "framework_function_test",
+    srcs = ["framework/function_test.py"],
+    additional_deps = [
+        ":functional_ops_lib",
+    ],
+)
+
+py_test(
     name = "framework_versions_test",
     srcs = ["framework/versions_test.py"],
     main = "framework/versions_test.py",
@@ -259,6 +326,7 @@ py_test(
         ":platform_test",
         ":session",
         ":test_ops",
+        "//tensorflow/core:protos_all_py",
     ],
 )
 
@@ -266,6 +334,18 @@ py_test(
     name = "framework_tensor_shape_test",
     srcs = ["framework/tensor_shape_test.py"],
     main = "framework/tensor_shape_test.py",
+    srcs_version = "PY2AND3",
+    deps = [
+        ":framework_test_lib",
+        ":platform_test",
+        "//tensorflow/core:protos_all_py",
+    ],
+)
+
+py_test(
+    name = "framework_device_test",
+    srcs = ["framework/device_test.py"],
+    main = "framework/device_test.py",
     srcs_version = "PY2AND3",
     deps = [
         ":framework_test_lib",
@@ -295,6 +375,7 @@ py_test(
         ":framework_test_lib",
         ":ops",
         ":platform_test",
+        "//tensorflow:tensorflow_py",
     ],
 )
 
@@ -307,6 +388,7 @@ py_test(
         ":framework_test_lib",
         ":ops",
         ":platform_test",
+        "//tensorflow:tensorflow_py",
     ],
 )
 
@@ -338,6 +420,7 @@ tf_gen_op_wrapper_py(
     name = "array_ops",
     hidden = [
         "BroadcastGradientArgs",
+        "ConcatOffset",
         "Concat",
         "Const",
         "EditDistance",
@@ -377,7 +460,9 @@ tf_gen_op_wrapper_py(
     hidden = [
         "Switch",
         "Merge",
+        "RefMerge",
         "Exit",
+        "RefExit",
     ],
     require_shape_functions = True,
     deps = [
@@ -397,6 +482,7 @@ tf_gen_op_wrapper_py(
         "Mutex",
         "MutexAcquire",
         "MutexRelease",
+        "PaddingFIFOQueue",
         "QueueClose",
         "QueueDequeue",
         "QueueDequeueMany",
@@ -408,6 +494,14 @@ tf_gen_op_wrapper_py(
         "StackPop",
         "StackPush",
         "StackClose",
+        "TensorArray",
+        "TensorArrayClose",
+        "TensorArrayGrad",
+        "TensorArrayRead",
+        "TensorArrayPack",
+        "TensorArraySize",
+        "TensorArrayUnpack",
+        "TensorArrayWrite",
     ],
     require_shape_functions = True,
 )
@@ -415,6 +509,7 @@ tf_gen_op_wrapper_py(
 tf_gen_op_wrapper_py(
     name = "image_ops",
     hidden = [
+        "RandomCrop",
         "ResizeBilinearGrad",
         "ResizeNearestNeighborGrad",
         "AdjustContrastv2",
@@ -483,6 +578,9 @@ tf_gen_op_wrapper_py(
         "MatMul",
         "Sigmoid",
         "Tanh",
+        "Lgamma",
+        "Erf",
+        "Erfc",
     ],
     require_shape_functions = True,
 )
@@ -493,6 +591,7 @@ tf_gen_op_wrapper_py(
         "AvgPoolGrad",  # "*Grad" accessible through nn_grad instead of nn_ops.
         "BatchNormWithGlobalNormalizationGrad",
         "SoftmaxCrossEntropyWithLogits",
+        "SparseSoftmaxCrossEntropyWithLogits",
         "LRNGrad",
         "MaxPoolGrad",
         "MaxPoolGradWithArgmax",
@@ -501,6 +600,8 @@ tf_gen_op_wrapper_py(
         "EluGrad",
         "SoftplusGrad",
         "SoftsignGrad",
+        "TopK",
+        "TopKV2",
         "BiasAdd",
         "Relu6",
         "AvgPool",
@@ -526,6 +627,14 @@ tf_gen_op_wrapper_py(
         "RandomShuffle",
         "RandomStandardNormal",
         "TruncatedNormal",
+    ],
+    require_shape_functions = True,
+)
+
+tf_gen_op_wrapper_py(
+    name = "script_ops",
+    hidden = [
+        "PyFunc",
     ],
     require_shape_functions = True,
 )
@@ -614,6 +723,7 @@ py_library(
         "ops/gen_string_ops.py",
         "ops/gen_summary_ops.py",
         "ops/gradients.py",
+        "ops/histogram_ops.py",
         "ops/image_grad.py",
         "ops/image_ops.py",
         "ops/init_ops.py",
@@ -631,6 +741,7 @@ py_library(
         "ops/random_ops.py",
         "ops/rnn.py",
         "ops/rnn_cell.py",
+        "ops/script_ops.py",
         "ops/seq2seq.py",
         "ops/sparse_grad.py",
         "ops/sparse_ops.py",
@@ -640,6 +751,8 @@ py_library(
         "ops/string_ops.py",
         "ops/summary_ops.py",
         "ops/template.py",
+        "ops/tensor_array_grad.py",
+        "ops/tensor_array_ops.py",
         "ops/variable_scope.py",
         "ops/variables.py",
         "user_ops/user_ops.py",
@@ -651,6 +764,7 @@ py_library(
         ":control_flow_ops",
         ":data_flow_ops",
         ":framework",
+        ":functional_ops_lib",
         ":io_ops",
         ":linalg_ops",
         ":logging_ops",
@@ -658,6 +772,7 @@ py_library(
         ":nn_ops",
         ":parsing_ops",
         ":random_ops",
+        ":script_ops",
         ":sparse_ops",
         ":string_ops",
         ":summary_ops",
@@ -680,7 +795,6 @@ py_library(
         ":protos_all_py",
         ":pywrap_tensorflow",
         ":training_ops",
-        "//tensorflow/core:protos_all_py",
     ],
 )
 
@@ -710,7 +824,9 @@ tf_proto_library_py(
     name = "protos_all",
     srcs = glob(
         ["**/*.proto"],
-        exclude = ["util/protobuf/compare_test.proto"],
+        exclude = [
+            "util/protobuf/compare_test.proto",
+        ],
     ),
 )
 
@@ -754,27 +870,11 @@ tf_cuda_library(
         ":construction_fails_op",
         ":test_ops_kernels",
         "//tensorflow/core",
+        "//tensorflow/core:all_kernels",
         "//tensorflow/core:direct_session",
-        "//tensorflow/core:kernels",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_cc",
         "//third_party/py/numpy:headers",
-        "//util/python:python_headers",
-    ],
-)
-
-tf_py_wrap_cc(
-    name = "client/pywraptensorflow_server_lib",
-    srcs = ["client/tensorflow_server.i"],
-    swig_includes = [
-        "lib/core/status.i",
-        "lib/core/strings.i",
-        "platform/base.i",
-    ],
-    deps = [
-        "//tensorflow/core",
-        "//tensorflow/core:lib",
-        "//tensorflow/core:protos_cc",
         "//util/python:python_headers",
     ],
 )
@@ -785,6 +885,8 @@ tf_py_wrap_cc(
     swig_includes = [
         "client/events_writer.i",
         "client/tf_session.i",
+        "framework/python_op_gen.i",
+        "lib/core/py_func.i",
         "lib/core/status.i",
         "lib/core/status_helper.i",
         "lib/core/strings.i",
@@ -795,8 +897,10 @@ tf_py_wrap_cc(
         "util/port.i",
     ],
     deps = [
+        ":py_func_lib",
         ":py_record_reader_lib",
         ":py_record_writer_lib",
+        ":python_op_gen",
         ":tf_session_helper",
         "//util/python:python_headers",
     ],
@@ -872,6 +976,7 @@ cpu_only_kernel_test_list = glob([
     "kernel_tests/clip_ops_test.py",
     "kernel_tests/decode_csv_op_test.py",
     "kernel_tests/decode_raw_op_test.py",
+    "kernel_tests/depthtospace_op_test.py",
     "kernel_tests/determinant_op_test.py",
     "kernel_tests/diag_op_test.py",
     "kernel_tests/edit_distance_op_test.py",
@@ -884,6 +989,9 @@ cpu_only_kernel_test_list = glob([
     "kernel_tests/lookup_table_op_test.py",
     "kernel_tests/lrn_op_py_test.py",
     "kernel_tests/matrix_inverse_op_test.py",
+    "kernel_tests/matrix_solve_op_test.py",
+    "kernel_tests/matrix_triangular_solve_op_test.py",
+    "kernel_tests/matrix_solve_ls_op_test.py",
     "kernel_tests/mutex_ops_test.py",
     "kernel_tests/parsing_ops_test.py",
     "kernel_tests/queue_ops_test.py",
@@ -897,6 +1005,7 @@ cpu_only_kernel_test_list = glob([
     "kernel_tests/sparse_reorder_op_test.py",
     "kernel_tests/sparse_to_dense_op_test.py",
     "kernel_tests/sparsemask_op_test.py",
+    "kernel_tests/spacetodepth_op_test.py",
     "kernel_tests/summary_ops_test.py",
     "kernel_tests/template_test.py",
     "kernel_tests/topk_op_test.py",
@@ -998,9 +1107,9 @@ py_library(
     deps = [
         ":client",
         ":framework",
+        ":protos_all_py",
         ":pywrap_tensorflow",
         ":util",
-        "//tensorflow/core:protos_all_py",
     ],
 )
 
@@ -1033,19 +1142,7 @@ py_binary(
     srcs_version = "PY2AND3",
     deps = [
         ":docs",
-        ":platform",
         "//tensorflow:tensorflow_py",
-    ],
-)
-
-sh_test(
-    name = "gen_docs_test",
-    size = "small",
-    srcs = [
-        "framework/gen_docs_test.sh",
-    ],
-    data = [
-        ":gen_docs_combined",
     ],
 )
 

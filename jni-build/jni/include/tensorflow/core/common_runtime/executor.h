@@ -18,11 +18,12 @@ limitations under the License.
 
 #include "tensorflow/core/common_runtime/device.h"
 #include "tensorflow/core/framework/rendezvous.h"
+#include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/lib/core/notification.h"
+#include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/public/status.h"
-#include "tensorflow/core/public/tensor.h"
+#include "tensorflow/core/platform/macros.h"
 
 namespace tensorflow {
 
@@ -112,9 +113,6 @@ struct LocalExecutorParams {
 
   // The library runtime support.
   FunctionLibraryRuntime* function_library;
-
-  // True iff the computation contains control flow nodes.
-  bool has_control_flow;
 
   // create_kernel returns an instance of op kernel based on NodeDef.
   // delete_kernel is called for every kernel used by the executor

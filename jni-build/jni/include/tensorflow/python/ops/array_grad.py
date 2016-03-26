@@ -67,14 +67,14 @@ def _ConcatGrad(op, grad):
   out_grads = []
   if isinstance(grad, ops.Tensor):
     # Get the inputs' tensor shapes
-    sizes = [array_ops.shape(x) for x in op.inputs[1:]]
-    mask, begin = _CreateDenseMaskAndBegin(sizes, concat_dim)
-    for size in sizes:
+    sizes = array_ops.shape_n(op.inputs[1:])
+    # pylint: disable=protected-access
+    offset = gen_array_ops._concat_offset(concat_dim, sizes)
+    # pylint: enable=protected-access
+    for (begin, size) in zip(offset, sizes):
       out_grads.append(array_ops.slice(grad, begin, size))
-      # Lint complains begin = begin + ...
-      begin = math_ops.add(begin, size * mask)
   elif isinstance(grad, ops.IndexedSlices):
-    concat_dim_static = tensor_util.ConstantValue(concat_dim)
+    concat_dim_static = tensor_util.constant_value(concat_dim)
     if concat_dim_static is None:
       raise ValueError("Can only compute IndexedSlices gradient with "
                        "statically-known concat_dim")
@@ -121,6 +121,9 @@ def _ConcatGrad(op, grad):
   return [None] + out_grads
 
 
+ops.NoGradient("ConcatOffset")
+
+
 @ops.RegisterGradient("Slice")
 def _SliceGrad(op, grad):
   """Gradient for Slice op."""
@@ -160,7 +163,13 @@ ops.NoGradient("Diag")
 # Edit Distance has no gradient (but can be used to eval seq2seq or CTC).
 ops.NoGradient("EditDistance")
 
-ops.NoGradient("Fill")
+
+@ops.RegisterGradient("Fill")
+def _FillGrad(_, grad):
+  return None, math_ops.reduce_sum(grad)
+
+
+ops.NoGradient("ZerosLike")
 
 
 @ops.RegisterGradient("Gather")
@@ -221,6 +230,9 @@ def _TransposeGrad(op, grad):
 ops.NoGradient("Shape")
 
 
+ops.NoGradient("ShapeN")
+
+
 ops.NoGradient("Rank")
 
 
@@ -231,7 +243,22 @@ ops.NoGradient("Size")
 def _TileGrad(op, grad):
   """Sum reduces grad along the tiled dimensions."""
   assert isinstance(grad, ops.Tensor)
-  return [gen_array_ops._tile_grad(grad, op.inputs[1]), None]
+  input_shape = array_ops.shape(op.inputs[0])
+  # We interleave multiples and input_shape to get split_shape,
+  # reshape grad to split_shape, and reduce along all even
+  # dimensions (the tiled dimensions) to get the result
+  # with shape input_shape.  For example
+  #   input_shape = [20, 30, 40]
+  #   multiples = [2, 3, 4]
+  #   split_shape = [2, 20, 3, 30, 4, 40]
+  #   axes = [0, 2, 4]
+  split_shape = array_ops.reshape(array_ops.transpose(
+      array_ops.pack([op.inputs[1], input_shape])), [-1])
+  axes = math_ops.range(0, array_ops.size(split_shape), 2)
+  input_grad = math_ops.reduce_sum(array_ops.reshape(grad, split_shape), axes)
+  # Fix shape inference
+  input_grad.set_shape(op.inputs[0].get_shape())
+  return [input_grad, None]
 
 
 ops.NoGradient("TileGrad")
@@ -271,3 +298,17 @@ def _ReverseSequenceGrad(op, grad):
 def _ReverseGrad(op, grad):
   reverse_dims = op.inputs[1]
   return array_ops.reverse(grad, reverse_dims), None
+
+
+@ops.RegisterGradient("SpaceToDepth")
+def _SpaceToDepthGrad(op, grad):
+  # Its gradient is the opposite op: DepthToSpace.
+  block_size = op.get_attr("block_size")
+  return array_ops.depth_to_space(grad, block_size)
+
+
+@ops.RegisterGradient("DepthToSpace")
+def _DepthToSpaceGrad(op, grad):
+  # Its gradient is the opposite op: SpaceToDepth.
+  block_size = op.get_attr("block_size")
+  return array_ops.space_to_depth(grad, block_size)

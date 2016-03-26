@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package tensorflow;
 // option cc_enable_arenas = true;
+option java_outer_classname = "TensorProtos";
+option java_multiple_files = true;
+option java_package = "org.tensorflow.framework";
 
 import "tensorflow/core/framework/tensor_shape.proto";
 import "tensorflow/core/framework/types.proto";
@@ -24,8 +27,8 @@ message TensorProto {
   // to represent a constant Tensor with a single value.
   int32 version_number = 3;
 
-  // Serialized content from TensorBase::Serialize() This representation can be
-  // used for all tensor types.
+  // Serialized content from Tensor::AsProtoTensorContent(). This representation
+  // can be used for all tensor types.
   bytes tensor_content = 4;
 
   // Type specific representations that make it easy to create tensor protos in

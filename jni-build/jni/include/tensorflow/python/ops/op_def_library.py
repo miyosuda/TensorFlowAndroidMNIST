@@ -194,11 +194,7 @@ def _MakeShape(v, arg_name):
                         str(v))
         break
     return v
-  s = tensor_shape.as_shape(v)
-  ret = tensor_shape_pb2.TensorShapeProto()
-  for i in s.as_dimension_list():
-    ret.dim.add(size = i)
-  return ret
+  return tensor_shape.as_shape(v).as_proto()
 
 
 def _MakeTensor(v, arg_name):
@@ -376,16 +372,14 @@ class OpDefLibrary(object):
           try:
             if not input_arg.is_ref and dtype:
               dtype = dtypes.as_dtype(dtype).base_dtype
-            values = ops.convert_n_to_tensor_or_indexed_slices(
-                values, name=input_arg.name,
-                dtype=dtype if dtype else None,
+            values = ops.convert_n_to_tensor(
+                values, name=input_arg.name, dtype=dtype if dtype else None,
                 as_ref=input_arg.is_ref)
           except (TypeError, ValueError):
             assert dtype is not None, "Should not fail if dtype is None"
             assert input_arg.number_attr, "Should be number_attr case"
             # What types does the conversion function think values have?
-            values = ops.convert_n_to_tensor_or_indexed_slices(
-                values, as_ref=input_arg.is_ref)
+            values = ops.convert_n_to_tensor(values, as_ref=input_arg.is_ref)
             observed = ", ".join(v.dtype.base_dtype.name for v in values)
 
             prefix = (
@@ -561,6 +555,7 @@ class OpDefLibrary(object):
                                "less than minimum %d." %
                                (key, op_type_name, len(value),
                                 attr_def.minimum))
+          attr_value.list.SetInParent()
         if attr_def.type == "string":
           attr_value.s = _MakeStr(value, key)
           if attr_def.HasField("allowed_values"):
@@ -659,8 +654,7 @@ class OpDefLibrary(object):
                          input_types=input_types, attrs=attr_protos,
                          op_def=op_def)
         outputs = op.outputs
-        return _Restructure(ops.convert_n_to_tensor_or_indexed_slices(outputs),
-                            output_structure)
+        return _Restructure(ops.convert_n_to_tensor(outputs), output_structure)
       else:
         return g.create_op(op_type_name, inputs, output_types, name=scope,
                            input_types=input_types, attrs=attr_protos,

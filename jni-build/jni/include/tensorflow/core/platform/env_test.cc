@@ -13,9 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/core/public/env.h"
+#include "tensorflow/core/platform/env.h"
 
-#include <gtest/gtest.h>
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/test.h"
@@ -27,7 +26,8 @@ struct EnvTest {};
 TEST(EnvTest, ReadFileToString) {
   Env* env = Env::Default();
   const string dir = testing::TmpDir();
-  for (const int length : {0, 1, 1212, 2553, 4928, 8196, 9000}) {
+  for (const int length : {0, 1, 1212, 2553, 4928, 8196, 9000, (1 << 20) - 1,
+                           1 << 20, (1 << 20) + 1}) {
     const string filename = io::JoinPath(dir, strings::StrCat("file", length));
 
     // Write a file with the given length

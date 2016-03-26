@@ -18,12 +18,12 @@ limitations under the License.
 #define EIGEN_USE_THREADS
 
 #include "tensorflow/core/kernels/transpose_op.h"
+#include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/kernels/transpose_op_functor.h"
+#include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/public/status.h"
-#include "tensorflow/core/public/tensor.h"
-#include "tensorflow/core/public/tensor_shape.h"
 
 namespace tensorflow {
 
@@ -68,6 +68,12 @@ class InvertPermutationOp : public OpKernel {
 REGISTER_KERNEL_BUILDER(Name("InvertPermutation").Device(DEVICE_CPU),
                         InvertPermutationOp);
 
+REGISTER_KERNEL_BUILDER(Name("InvertPermutation")
+                            .Device(DEVICE_GPU)
+                            .HostMemory("x")
+                            .HostMemory("y"),
+                        InvertPermutationOp);
+
 // output = TransposeOp(T<any> input, T<int32> perm) takes a tensor
 // of type T and rank N, and a permutation of 0, 1, ..., N-1. It
 // shuffles the dimensions of the input tensor according to permutation.
@@ -97,8 +103,8 @@ void TransposeOp<Device, T>::Compute(OpKernelContext* context) {
                                       perm.shape().DebugString()));
   auto Vperm = perm.vec<int32>();
   const int dims = input.dims();
-  static const int kMinDims = 1;
-  static const int kMaxDims = 8;
+  static const int kMinDims = 0;
+  static const int kMaxDims = 10;
   OP_REQUIRES(context, kMinDims <= dims && dims <= kMaxDims,
               errors::Unimplemented("Transposing a tensor of rank ", dims,
                                     " is not implemented."));
@@ -125,20 +131,35 @@ void TransposeOp<Device, T>::Compute(OpKernelContext* context) {
                                       str_util::Join(permutation, ","), "}."));
   }
 
+  // 0-D and 1-D transposes do nothing
+  if (dims <= 1) {
+    context->set_output(0, input);
+    return;
+  }
+
   Tensor* output = nullptr;
   OP_REQUIRES_OK(context, context->allocate_output(0, shape, &output));
+  TransposeTensor<Device, T>(context->eigen_device<Device>(), input,
+                             input.shape().dim_sizes(), permutation, output);
+}
+
+template <typename Device, typename T>
+void TransposeTensor(const Device& device, const Tensor& input,
+                     const gtl::ArraySlice<int64> input_shape,
+                     gtl::ArraySlice<int32> permutation, Tensor* output) {
+  const int dims = input_shape.size();
+  CHECK(permutation.size() == dims);
   if (input.NumElements() == 0) {
     return;
   }
   switch (dims) {
-#define EXPAND_DIM(N)                                             \
-  case N: {                                                       \
-    functor::TransposeFunctor<Device, T, N> func;                 \
-    func(context->eigen_device<Device>(), output->tensor<T, N>(), \
-         input.tensor<T, N>(), permutation.data());               \
-    break;                                                        \
+#define EXPAND_DIM(N)                                                     \
+  case N: {                                                               \
+    functor::TransposeFunctor<Device, T, N> func;                         \
+    func(device, output->tensor<T, N>(), input.shaped<T, N>(input_shape), \
+         permutation.data());                                             \
+    break;                                                                \
   }
-    EXPAND_DIM(1);
     EXPAND_DIM(2);
     EXPAND_DIM(3);
     EXPAND_DIM(4);
@@ -146,6 +167,8 @@ void TransposeOp<Device, T>::Compute(OpKernelContext* context) {
     EXPAND_DIM(6);
     EXPAND_DIM(7);
     EXPAND_DIM(8);
+    EXPAND_DIM(9);
+    EXPAND_DIM(10);
     default:
       LOG(FATAL) << "Unexpected dims: " << dims;
   }
@@ -179,13 +202,16 @@ struct TransposeFunctor<CPUDevice, T, NDIMS> {
 
 }  // namespace functor
 
-#define REGISTER(D, T)                                \
-  template class TransposeOp<D##Device, T>;           \
-  REGISTER_KERNEL_BUILDER(Name("Transpose")           \
-                              .Device(DEVICE_##D)     \
-                              .TypeConstraint<T>("T") \
-                              .HostMemory("perm"),    \
-                          TransposeOp<D##Device, T>)
+#define REGISTER(D, T)                                               \
+  template class TransposeOp<D##Device, T>;                          \
+  REGISTER_KERNEL_BUILDER(Name("Transpose")                          \
+                              .Device(DEVICE_##D)                    \
+                              .TypeConstraint<T>("T")                \
+                              .HostMemory("perm"),                   \
+                          TransposeOp<D##Device, T>);                \
+  template void TransposeTensor<D##Device, T>(                       \
+      const D##Device&, const Tensor&, const gtl::ArraySlice<int64>, \
+      gtl::ArraySlice<int32>, Tensor*);
 REGISTER(CPU, float);
 REGISTER(CPU, double);
 REGISTER(CPU, complex64);
@@ -195,6 +221,7 @@ REGISTER(CPU, int16);
 REGISTER(CPU, int32);
 REGISTER(CPU, int64);
 REGISTER(CPU, string);
+REGISTER(CPU, bool);
 #if GOOGLE_CUDA
 REGISTER(GPU, uint8);
 REGISTER(GPU, int8);
@@ -203,6 +230,8 @@ REGISTER(GPU, int32);
 REGISTER(GPU, int64);
 REGISTER(GPU, float);
 REGISTER(GPU, double);
+REGISTER(GPU, complex64);
+REGISTER(GPU, bool);
 #endif
 #undef REGISTER
 }  // namespace tensorflow

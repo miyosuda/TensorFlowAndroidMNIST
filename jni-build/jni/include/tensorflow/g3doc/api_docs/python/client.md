@@ -53,7 +53,7 @@ with tf.Session() as sess:
 ```
 
 The [`ConfigProto`]
-(https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/core/framework/config.proto)
+(https://www.tensorflow.org/code/tensorflow/core/framework/config.proto)
 protocol buffer exposes various configuration options for a
 session. For example, to create a session that uses soft constraints
 for device placement, and log the resulting placement decisions,
@@ -87,7 +87,7 @@ the session constructor.
     Defaults to using an in-process engine. At present, no value
     other than the empty string is supported.
 *  <b>`graph`</b>: (Optional.) The `Graph` to be launched (described above).
-*  <b>`config`</b>: (Optional.) A [`ConfigProto`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/core/framework/config.proto)
+*  <b>`config`</b>: (Optional.) A [`ConfigProto`](https://www.tensorflow.org/code/tensorflow/core/framework/config.proto)
     protocol buffer with configuration options for the session.
 
 
@@ -277,7 +277,7 @@ with tf.Session():
 
 - - -
 
-#### `tf.InteractiveSession.__init__(target='', graph=None)` {#InteractiveSession.__init__}
+#### `tf.InteractiveSession.__init__(target='', graph=None, config=None)` {#InteractiveSession.__init__}
 
 Creates a new interactive TensorFlow session.
 
@@ -296,6 +296,7 @@ the session constructor.
     Defaults to using an in-process engine. At present, no value
     other than the empty string is supported.
 *  <b>`graph`</b>: (Optional.) The `Graph` to be launched (described above).
+*  <b>`config`</b>: (Optional) `ConfigProto` proto used to configure the session.
 
 
 - - -
@@ -316,7 +317,7 @@ Returns the default session for the current thread.
 The returned `Session` will be the innermost session on which a
 `Session` or `Session.as_default()` context has been entered.
 
-*N.B.* The default session is a property of the current thread. If you
+NOTE: The default session is a property of the current thread. If you
 create a new thread, and wish to use the default session in that
 thread, you must explicitly add a `with sess.as_default():` in that
 thread's function.

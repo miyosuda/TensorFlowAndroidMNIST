@@ -42,8 +42,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow.python.platform
-
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
@@ -296,20 +294,21 @@ def _SparseSplitShape(op):
 
 @ops.RegisterShape("SparseToDense")
 def _SparseToDenseShape(op):
-  input_shape = tensor_util.ConstantValue(op.inputs[1])
+  input_shape = tensor_util.constant_value(op.inputs[1])
   if input_shape is not None:
     if np.ndim(input_shape) > 1:
       raise ValueError("Input shape should be a vector")
-    return [tensor_shape.TensorShape(input_shape.tolist())]
+    return [tensor_shape.TensorShape(input_shape)]
   else:
-    input_shape_shape = op.inputs[1].get_shape().with_rank_at_most(1)
-    return [tensor_shape.unknown_shape(ndims=input_shape_shape.num_elements())]
+    input_shape_shape = op.inputs[1].get_shape().with_rank(1)
+    return [tensor_shape.unknown_shape(ndims=input_shape_shape[0].value)]
 
 
 def sparse_to_dense(sparse_indices,
                     output_shape,
                     sparse_values,
                     default_value=0,
+                    validate_indices=True,
                     name=None):
   """Converts a sparse representation into a dense tensor.
 
@@ -329,6 +328,10 @@ def sparse_to_dense(sparse_indices,
   All other values in `dense` are set to `default_value`.  If `sparse_values`
   is a scalar, all sparse indices are set to this single value.
 
+  Indices should be sorted in lexicographic order, and indices must not
+  contain any repeats. If `validate_indices` is True, these properties
+  are checked during execution.
+
   Args:
     sparse_indices: A 0-D, 1-D, or 2-D `Tensor` of type `int32` or `int64`.
       `sparse_indices[i]` contains the complete index where `sparse_values[i]`
@@ -339,6 +342,8 @@ def sparse_to_dense(sparse_indices,
       `sparse_indices`, or a scalar value to be used for all sparse indices.
     default_value: A 0-D `Tensor` of the same type as `sparse_values`.  Value
       to set for indices not specified in `sparse_indices`.  Defaults to zero.
+    validate_indices: A boolean value.  If True, indices are checked to make
+      sure they are sorted in lexicographic order and that there are no repeats.
     name: A name for the operation (optional).
 
   Returns:
@@ -348,11 +353,15 @@ def sparse_to_dense(sparse_indices,
   return gen_sparse_ops._sparse_to_dense(sparse_indices,
                                          output_shape,
                                          sparse_values,
-                                         default_value,
+                                         default_value=default_value,
+                                         validate_indices=validate_indices,
                                          name=name)
 
 
-def sparse_tensor_to_dense(sp_input, default_value=0, name=None):
+def sparse_tensor_to_dense(sp_input,
+                           default_value=0,
+                           validate_indices=True,
+                           name=None):
   """Converts a `SparseTensor` into a dense tensor.
 
   This op is a convenience wrapper around `sparse_to_dense` for `SparseTensor`s.
@@ -370,10 +379,15 @@ def sparse_tensor_to_dense(sp_input, default_value=0, name=None):
        [x x x x x]
        [c x x x x]]
 
+  Indices must be without repeats.  This is only
+  tested if validate_indices is True.
+
   Args:
     sp_input: The input `SparseTensor`.
     default_value: Scalar value to set for indices not specified in
       `sp_input`.  Defaults to zero.
+    validate_indices: A boolean value.  If `True`, indices are checked to make
+      sure they are sorted in lexicographic order and that there are no repeats.
     name: A name prefix for the returned tensors (optional).
 
   Returns:
@@ -390,7 +404,8 @@ def sparse_tensor_to_dense(sp_input, default_value=0, name=None):
   return sparse_to_dense(sp_input.indices,
                          sp_input.shape,
                          sp_input.values,
-                         default_value,
+                         default_value=default_value,
+                         validate_indices=validate_indices,
                          name=name)
 
 
@@ -410,15 +425,18 @@ def sparse_to_indicator(sp_input, vocab_size, name=None):
       [0, 0, 0]: 0
       [0, 1, 0]: 10
       [1, 0, 3]: 103
-      [1, 1, 2]: 112
-      [1, 1, 3]: 113
+      [1, 1, 2]: 150
+      [1, 1, 3]: 149
+      [1, 1, 4]: 150
       [1, 2, 1]: 121
 
   and `vocab_size = 200`, then the output will be a `[2, 3, 200]` dense bool
   tensor with False everywhere except at positions
 
-      (0, 0, 0), (0, 1, 10), (1, 0, 103), (1, 1, 112), (1, 1, 113), (1, 2, 121).
+      (0, 0, 0), (0, 1, 10), (1, 0, 103), (1, 1, 149), (1, 1, 150),
+      (1, 2, 121).
 
+  Note that repeats are allowed in the input SparseTensor.
   This op is useful for converting `SparseTensor`s into dense formats for
   compatibility with ops that expect dense tensors.
 
@@ -460,7 +478,10 @@ def sparse_to_indicator(sp_input, vocab_size, name=None):
 
     sp_new = ops.SparseTensor(new_indices, new_values, new_shape)
 
-    return sparse_tensor_to_dense(sp_new, False, name=name)
+    # validate_indices may be False because we allow duplicates in new_indices:
+    # repeated indices are allowed when creating an indicator matrix.
+    return sparse_tensor_to_dense(
+        sp_new, default_value=False, validate_indices=False, name=name)
 
 
 def sparse_retain(sp_input, to_retain):

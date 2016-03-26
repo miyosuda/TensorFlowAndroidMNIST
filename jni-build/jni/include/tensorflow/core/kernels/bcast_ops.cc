@@ -13,10 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/core/platform/port.h"
+#include "tensorflow/core/util/bcast.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/util/bcast.h"
+#include "tensorflow/core/platform/macros.h"
+#include "tensorflow/core/platform/types.h"
 
 namespace tensorflow {
 
@@ -41,7 +42,7 @@ class BCastGradArgsOp : public OpKernel {
       const Tensor& in = ctx->input(i);
       OP_REQUIRES(ctx, TensorShapeUtils::IsVector(in.shape()),
                   errors::InvalidArgument("In[", i, "] must be a vector.",
-                                          in.shape().ShortDebugString()));
+                                          in.shape().DebugString()));
       BCast::Vec vec;
       for (int64 i = 0; i < in.NumElements(); ++i) {
         vec.push_back(in.vec<int32>()(i));

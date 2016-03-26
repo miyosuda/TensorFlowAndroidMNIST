@@ -15,14 +15,15 @@ limitations under the License.
 
 #include "tensorflow/core/framework/op_def_builder.h"
 
+#include <vector>
 #include "tensorflow/core/framework/attr_value_util.h"
 #include "tensorflow/core/framework/op_def_util.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
+#include "tensorflow/core/lib/strings/regexp.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
-#include "tensorflow/core/platform/regexp.h"
 
 namespace tensorflow {
 

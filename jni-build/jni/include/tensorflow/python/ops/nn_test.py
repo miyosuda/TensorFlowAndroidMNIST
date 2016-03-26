@@ -20,8 +20,6 @@ from __future__ import print_function
 
 import math
 
-import tensorflow.python.platform
-
 import tensorflow as tf
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -146,9 +144,9 @@ class SoftmaxTest(tf.test.TestCase):
     self.assertLess(err, eps)
 
 
-class DeConv2DTest(tf.test.TestCase):
+class Conv2DTransposeTest(tf.test.TestCase):
 
-  def testDeConv2DSingleStride(self):
+  def testConv2DTransposeSingleStride(self):
     with self.test_session():
       strides = [1, 1, 1, 1]
 
@@ -161,7 +159,8 @@ class DeConv2DTest(tf.test.TestCase):
 
       x = tf.constant(1.0, shape=x_shape, name="x", dtype=tf.float32)
       f = tf.constant(1.0, shape=f_shape, name="filter", dtype=tf.float32)
-      output = tf.nn.deconv2d(x, f, y_shape, strides=strides, padding="SAME")
+      output = tf.nn.conv2d_transpose(x, f, y_shape, strides=strides,
+                                      padding="SAME")
       value = output.eval()
 
       # We count the number of cells being added at the locations in the output.
@@ -183,7 +182,7 @@ class DeConv2DTest(tf.test.TestCase):
                 target += 2 * 3.0
               self.assertAllClose(target, value[n, h, w, k])
 
-  def testDeConv2DSame(self):
+  def testConv2DTransposeSame(self):
     with self.test_session():
       strides = [1, 2, 2, 1]
 
@@ -196,7 +195,8 @@ class DeConv2DTest(tf.test.TestCase):
 
       x = tf.constant(1.0, shape=x_shape, name="x", dtype=tf.float32)
       f = tf.constant(1.0, shape=f_shape, name="filter", dtype=tf.float32)
-      output = tf.nn.deconv2d(x, f, y_shape, strides=strides, padding="SAME")
+      output = tf.nn.conv2d_transpose(x, f, y_shape, strides=strides,
+                                      padding="SAME")
       value = output.eval()
 
       for n in xrange(x_shape[0]):
@@ -213,7 +213,7 @@ class DeConv2DTest(tf.test.TestCase):
                 target += 3.0
               self.assertAllClose(target, value[n, h, w, k])
 
-  def testDeConv2DValid(self):
+  def testConv2DTransposeValid(self):
     with self.test_session():
       strides = [1, 2, 2, 1]
 
@@ -226,7 +226,8 @@ class DeConv2DTest(tf.test.TestCase):
 
       x = tf.constant(1.0, shape=x_shape, name="x", dtype=tf.float32)
       f = tf.constant(1.0, shape=f_shape, name="filter", dtype=tf.float32)
-      output = tf.nn.deconv2d(x, f, y_shape, strides=strides, padding="VALID")
+      output = tf.nn.conv2d_transpose(x, f, y_shape, strides=strides,
+                                      padding="VALID")
       value = output.eval()
 
       cache_values = np.zeros(y_shape, dtype=np.float32)
@@ -269,7 +270,8 @@ class DeConv2DTest(tf.test.TestCase):
     with self.test_session():
       x = tf.constant(x_val, name="x", dtype=tf.float32)
       f = tf.constant(f_val, name="f", dtype=tf.float32)
-      output = tf.nn.deconv2d(x, f, y_shape, strides=strides, padding="SAME")
+      output = tf.nn.conv2d_transpose(x, f, y_shape, strides=strides,
+                                      padding="SAME")
       err = tf.test.compute_gradient_error(
           [x, f], [x_shape, f_shape], output, y_shape)
     print("DeConv gradient err = %g " % err)
@@ -611,7 +613,7 @@ class BatchNormWithGlobalNormalizationTest(tf.test.TestCase):
 
 class MomentsTest(tf.test.TestCase):
 
-  def RunMomentTestWithDynamicShape(self, shape, global_norm):
+  def RunMomentTestWithDynamicShape(self, shape, axes, keep_dims):
     with self.test_session():
       # shape = [batch, width, height, depth]
       assert len(shape) == 4
@@ -619,23 +621,25 @@ class MomentsTest(tf.test.TestCase):
       x_numpy = np.random.normal(size=shape).astype(np.float32)
       x = tf.placeholder(tf.float32, shape=[None] * len(shape))
 
-      axes = [0, 1, 2] if global_norm else [0]
-      mean, var = tf.nn.moments(x, axes)
+      mean, var = tf.nn.moments(x, axes, keep_dims=keep_dims)
 
       num_elements = np.prod([shape[i] for i in axes])
 
-      ax = (0, 1, 2) if global_norm else (0)
-      expected_mean = np.sum(x_numpy, axis=ax) / num_elements
+      ax = tuple(axes)
+      expected_mean = np.sum(
+          x_numpy, axis=ax, keepdims=keep_dims) / num_elements
       expected_mean_squared = np.multiply(expected_mean, expected_mean)
       expected_x_squared = np.sum(
-          np.multiply(x_numpy, x_numpy), axis=ax) / num_elements
+          np.multiply(x_numpy, x_numpy),
+          axis=ax,
+          keepdims=keep_dims) / num_elements
       expected_variance = expected_x_squared - expected_mean_squared
 
       # Check that the moments are correct.
       self.assertAllClose(expected_mean, mean.eval(feed_dict={x: x_numpy}))
       self.assertAllClose(expected_variance, var.eval(feed_dict={x: x_numpy}))
 
-  def RunMomentTest(self, shape, global_norm):
+  def RunMomentTest(self, shape, axes, keep_dims):
     with self.test_session():
       # shape = [batch, width, height, depth]
       assert len(shape) == 4
@@ -643,16 +647,18 @@ class MomentsTest(tf.test.TestCase):
       x_numpy = np.random.normal(size=shape).astype(np.float32)
       x = tf.constant(x_numpy)
 
-      axes = [0, 1, 2] if global_norm else [0]
-      mean, var = tf.nn.moments(x, axes)
+      mean, var = tf.nn.moments(x, axes, keep_dims=keep_dims)
 
       num_elements = np.prod([shape[i] for i in axes])
 
-      ax = (0, 1, 2) if global_norm else (0)
-      expected_mean = np.sum(x_numpy, axis=ax) / num_elements
+      ax = tuple(axes)
+      expected_mean = np.sum(
+          x_numpy, axis=ax, keepdims=keep_dims) / num_elements
       expected_mean_squared = np.multiply(expected_mean, expected_mean)
       expected_x_squared = np.sum(
-          np.multiply(x_numpy, x_numpy), axis=ax) / num_elements
+          np.multiply(x_numpy, x_numpy),
+          axis=ax,
+          keepdims=keep_dims) / num_elements
       expected_variance = expected_x_squared - expected_mean_squared
 
       # Check that the moments are correct.
@@ -660,12 +666,24 @@ class MomentsTest(tf.test.TestCase):
       self.assertAllClose(expected_variance, var.eval())
 
   def testBasic(self):
-    self.RunMomentTest(shape=[2, 3, 5, 4], global_norm=False)
-    self.RunMomentTestWithDynamicShape(shape=[2, 3, 5, 4], global_norm=False)
+    for keep_dims in [False, True]:
+      self.RunMomentTest(shape=[2, 3, 5, 4], axes=[0], keep_dims=keep_dims)
+      self.RunMomentTestWithDynamicShape(
+          shape=[2, 3, 5, 4], axes=[0], keep_dims=keep_dims)
 
   def testGlobalNormalization(self):
-    self.RunMomentTest(shape=[2, 3, 5, 4], global_norm=True)
-    self.RunMomentTestWithDynamicShape(shape=[2, 3, 5, 4], global_norm=True)
+    for keep_dims in [False, True]:
+      self.RunMomentTest(
+          shape=[2, 3, 5, 4], axes=[0, 1, 2], keep_dims=keep_dims)
+      self.RunMomentTestWithDynamicShape(
+          shape=[2, 3, 5, 4], axes=[0, 1, 2], keep_dims=keep_dims)
+
+  def testAxes(self):
+    for keep_dims in [False, True]:
+      self.RunMomentTest(
+          shape=[2, 3, 5, 4], axes=[1, 2, 3], keep_dims=keep_dims)
+      self.RunMomentTestWithDynamicShape(
+          shape=[2, 3, 5, 4], axes=[1, 2, 3], keep_dims=keep_dims)
 
   def _testGlobalGradient(self, from_y="mean"):
     with self.test_session():

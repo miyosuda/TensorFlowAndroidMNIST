@@ -24,15 +24,15 @@ REGISTER_OP("ScalarSummary")
     .Input("tags: string")
     .Input("values: T")
     .Output("summary: string")
-    .Attr("T: {float, double}")
+    .Attr("T: realnumbertype")
     .Doc(R"doc(
 Outputs a `Summary` protocol buffer with scalar values.
 
 The input `tags` and `values` must have the same shape.  The generated summary
 has a summary value for each tag-value pair in `tags` and `values`.
 
-tags: 1-D. Tags for the summary.
-values: 1-D, same size as `tags.  Values for the summary.
+tags: Tags for the summary.
+values: Same shape as `tags.  Values for the summary.
 summary: Scalar.  Serialized `Summary` protocol buffer.
 )doc");
 
@@ -45,7 +45,7 @@ REGISTER_OP("HistogramSummary")
 Outputs a `Summary` protocol buffer with a histogram.
 
 The generated
-[`Summary`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/core/framework/summary.proto)
+[`Summary`](https://www.tensorflow.org/code/tensorflow/core/framework/summary.proto)
 has one summary value containing a histogram for `values`.
 
 This op reports an `OutOfRange` error if any value is not finite.
@@ -118,7 +118,7 @@ REGISTER_OP("MergeSummary")
 Merges summaries.
 
 This op creates a
-[`Summary`](https://tensorflow.googlesource.com/tensorflow/+/master/tensorflow/core/framework/summary.proto)
+[`Summary`](https://www.tensorflow.org/code/tensorflow/core/framework/summary.proto)
 protocol buffer that contains the union of all the values in the input
 summaries.
 

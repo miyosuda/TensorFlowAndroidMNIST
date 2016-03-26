@@ -17,16 +17,17 @@ limitations under the License.
 
 #define EIGEN_USE_THREADS
 
-#include "tensorflow/core/framework/numeric_op.h"
+#include <vector>
 #include "third_party/eigen3/Eigen/Core"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+#include "tensorflow/core/framework/numeric_op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
+#include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/framework/types.h"
+#include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/public/status.h"
-#include "tensorflow/core/public/tensor.h"
 #include "tensorflow/core/util/util.h"
 
 namespace tensorflow {
@@ -101,7 +102,7 @@ class SegmentReductionOp : public OpKernel {
                                Eigen::Unaligned> OutT;
       T* out_slice_ptr = &output_flat(segment_vec(start), 0);
       OutT out_slice(out_slice_ptr, out_slice_shape);
-      // We don't use out_slice.device(context->egien_device<Device>)
+      // We don't use out_slice.device(context->eigen_device<Device>)
       // because these pieces of work are likely to be very small and
       // the context switching overhead dwarfs any benefit we get from
       // using another thread to do this work.
@@ -184,16 +185,16 @@ class UnsortedSegmentSumOp : public OpKernel {
     const Tensor& num_segments = context->input(2);
 
     OP_REQUIRES(
-        context, TensorShapeUtils::IsLegacyScalar(num_segments.shape()),
+        context, IsLegacyScalar(num_segments.shape()),
         errors::InvalidArgument("num_segments should be a scalar, not shape ",
-                                num_segments.shape().ShortDebugString()));
+                                num_segments.shape().DebugString()));
 
-    OP_REQUIRES(context,
-                TensorShapeUtils::StartsWith(data.shape(), segment_ids.shape()),
-                errors::InvalidArgument(
-                    "data.shape = ", data.shape().ShortDebugString(),
-                    " does not start with segment_ids.shape = ",
-                    segment_ids.shape().ShortDebugString()));
+    OP_REQUIRES(
+        context,
+        TensorShapeUtils::StartsWith(data.shape(), segment_ids.shape()),
+        errors::InvalidArgument("data.shape = ", data.shape().DebugString(),
+                                " does not start with segment_ids.shape = ",
+                                segment_ids.shape().DebugString()));
 
     const auto segment_flat = segment_ids.flat<Index>();
     const int32 N = segment_flat.dimension(0);
@@ -250,8 +251,8 @@ template <typename Device, class T>
 class SparseSegmentReductionOpBase : public OpKernel {
  public:
   explicit SparseSegmentReductionOpBase(OpKernelConstruction* context,
-                                        bool is_mean)
-      : OpKernel(context), is_mean_(is_mean) {}
+                                        bool is_mean, bool is_sqrtn)
+      : OpKernel(context), is_mean_(is_mean), is_sqrtn_(is_sqrtn) {}
 
   void Compute(OpKernelContext* context) override {
     const Tensor& input = context->input(0);
@@ -309,7 +310,13 @@ class SparseSegmentReductionOpBase : public OpKernel {
         out = I(0);
       } else {
         int r = num % 8;
-        T m = (is_mean_ && (num < 10)) ? num : 1;
+        T m = 1;
+        if (is_mean_ && (num < 10)) {
+          m = num;
+        }
+        if (is_sqrtn_ && (num < 10)) {
+          m = sqrt(num);
+        }
         switch (r) {
           case 2:
             out = (I(0) + I(1)) / m;
@@ -348,6 +355,9 @@ class SparseSegmentReductionOpBase : public OpKernel {
         if (is_mean_ && num >= 10) {
           out = out / static_cast<T>(num);
         }
+        if (is_sqrtn_ && num >= 10) {
+          out = out / static_cast<T>(sqrt(num));
+        }
       }
       start = end;
       ++end;
@@ -355,7 +365,8 @@ class SparseSegmentReductionOpBase : public OpKernel {
   }
 
  private:
-  bool is_mean_;
+  const bool is_mean_;
+  const bool is_sqrtn_;
 };
 
 template <typename Device, class T>
@@ -363,7 +374,17 @@ class SparseSegmentReductionMeanOp
     : public SparseSegmentReductionOpBase<Device, T> {
  public:
   explicit SparseSegmentReductionMeanOp(OpKernelConstruction* context)
-      : SparseSegmentReductionOpBase<Device, T>(context, true /*is_mean*/) {}
+      : SparseSegmentReductionOpBase<Device, T>(context, true /*is_mean*/,
+                                                false /*is_sqrtn*/) {}
+};
+
+template <typename Device, class T>
+class SparseSegmentReductionSqrtNOp
+    : public SparseSegmentReductionOpBase<Device, T> {
+ public:
+  explicit SparseSegmentReductionSqrtNOp(OpKernelConstruction* context)
+      : SparseSegmentReductionOpBase<Device, T>(context, false /*is_mean*/,
+                                                true /*is_sqrtn*/) {}
 };
 
 template <typename Device, class T>
@@ -371,7 +392,8 @@ class SparseSegmentReductionSumOp
     : public SparseSegmentReductionOpBase<Device, T> {
  public:
   explicit SparseSegmentReductionSumOp(OpKernelConstruction* context)
-      : SparseSegmentReductionOpBase<Device, T>(context, false /*is_mean*/) {}
+      : SparseSegmentReductionOpBase<Device, T>(context, false /*is_mean*/,
+                                                false /*is_sqrtn*/) {}
 };
 
 #define REGISTER_CPU_SPARSE_KERNELS(type)                                    \
@@ -390,11 +412,19 @@ REGISTER_CPU_SPARSE_KERNELS(float);
 REGISTER_CPU_SPARSE_KERNELS(double);
 #undef REGISTER_CPU_SPARSE_KERNELS
 
+#define REGISTER_CPU_SPARSE_KERNELS(type)                                      \
+  REGISTER_KERNEL_BUILDER(                                                     \
+      Name("SparseSegmentSqrtN").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
+      SparseSegmentReductionSqrtNOp<CPUDevice, type>);
+REGISTER_CPU_SPARSE_KERNELS(float);
+REGISTER_CPU_SPARSE_KERNELS(double);
+#undef REGISTER_CPU_SPARSE_KERNELS
+
 template <class T>
-class SparseSegmentMeanGradOp : public OpKernel {
+class SparseSegmentGradOpBase : public OpKernel {
  public:
-  explicit SparseSegmentMeanGradOp(OpKernelConstruction* context)
-      : OpKernel(context) {}
+  explicit SparseSegmentGradOpBase(OpKernelConstruction* context, bool is_sqrtn)
+      : OpKernel(context), is_sqrtn_(is_sqrtn) {}
 
   void Compute(OpKernelContext* context) override {
     const Tensor& input = context->input(0);
@@ -406,7 +436,7 @@ class SparseSegmentMeanGradOp : public OpKernel {
                 errors::InvalidArgument("indices should be a vector."));
     OP_REQUIRES(context, TensorShapeUtils::IsVector(segment_ids.shape()),
                 errors::InvalidArgument("segment_ids should be a vector."));
-    OP_REQUIRES(context, TensorShapeUtils::IsLegacyScalar(output_dim0.shape()),
+    OP_REQUIRES(context, IsLegacyScalar(output_dim0.shape()),
                 errors::InvalidArgument("output_dim0 should be a scalar."));
 
     const int64 N = indices.NumElements();
@@ -436,8 +466,12 @@ class SparseSegmentMeanGradOp : public OpKernel {
     for (int64 i = 0; i < N; ++i) {
       scaling[segment_vec(i)] += 1;
     }
-    for (int i = 0; i < scaling.size(); ++i) {
-      scaling[i] = 1.0 / std::max(scaling[i], 1.0);
+    for (size_t i = 0; i < scaling.size(); ++i) {
+      if (is_sqrtn_) {
+        scaling[i] = 1.0 / sqrt(std::max(scaling[i], 1.0));
+      } else {
+        scaling[i] = 1.0 / std::max(scaling[i], 1.0);
+      }
     }
 
     auto output_flat = output->flat_outer_dims<T>();
@@ -468,6 +502,23 @@ class SparseSegmentMeanGradOp : public OpKernel {
       is_modified[output_idx] = true;
     }
   }
+
+ private:
+  const bool is_sqrtn_;
+};
+
+template <class T>
+class SparseSegmentMeanGradOp : public SparseSegmentGradOpBase<T> {
+ public:
+  explicit SparseSegmentMeanGradOp(OpKernelConstruction* context)
+      : SparseSegmentGradOpBase<T>(context, false /*is_sqrtn*/) {}
+};
+
+template <class T>
+class SparseSegmentSqrtNGradOp : public SparseSegmentGradOpBase<T> {
+ public:
+  explicit SparseSegmentSqrtNGradOp(OpKernelConstruction* context)
+      : SparseSegmentGradOpBase<T>(context, true /*is_sqrtn*/) {}
 };
 
 #define REGISTER_CPU_SPARSE_KERNELS(type)                 \
@@ -475,9 +526,16 @@ class SparseSegmentMeanGradOp : public OpKernel {
                               .Device(DEVICE_CPU)         \
                               .TypeConstraint<type>("T"), \
                           SparseSegmentMeanGradOp<type>);
-
 REGISTER_CPU_SPARSE_KERNELS(float);
 REGISTER_CPU_SPARSE_KERNELS(double);
+#undef REGISTER_CPU_SPARSE_KERNELS
 
+#define REGISTER_CPU_SPARSE_KERNELS(type)                 \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSqrtNGrad")  \
+                              .Device(DEVICE_CPU)         \
+                              .TypeConstraint<type>("T"), \
+                          SparseSegmentSqrtNGradOp<type>);
+REGISTER_CPU_SPARSE_KERNELS(float);
+REGISTER_CPU_SPARSE_KERNELS(double);
 #undef REGISTER_CPU_SPARSE_KERNELS
 }  // namespace tensorflow
