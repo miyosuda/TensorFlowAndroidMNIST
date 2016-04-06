@@ -54,17 +54,17 @@ First download, extract and place Android NDK.
 
 http://developer.android.com/intl/ja/ndk/downloads/index.html
 
-And then update your PATH environment variable like,
+And then update your PATH environment variable. For example,
 
     export NDK_HOME="/Users/[your-username]/Development/android/android-ndk-r11b"
     export PATH=$PATH:$NDK_HOME
 
-And build .so file
+And build .so file in jni-build dir.
 
     $ cd jni-build
     $ make
     
-and copy .so file into /app/src/main/jniLibs/armeabi-v7a/ with
+and copy .so file into app/src/main/jniLibs/armeabi-v7a/ with
 
     $ make install
 
