@@ -29,11 +29,13 @@ limitations under the License.
 
 #include "tensorflow/core/framework/tensor.h"
 
+#include "tensorflow/core/framework/log_memory.h"
 #include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/core/framework/type_traits.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/coding.h"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/lib/gtl/inlined_vector.h"
 #include "tensorflow/core/lib/gtl/stl_util.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
@@ -46,24 +48,22 @@ limitations under the License.
 namespace tensorflow {
 namespace {
 
-// Typed ref-counted buffer: T[n].
-template <typename T>
-class Buffer : public TensorBuffer {
+// An un-templated base class for Buffer.
+class BufferBase : public TensorBuffer {
  public:
-  Buffer(Allocator* a, int64 n);
-  Buffer(Allocator* a, int64 n, const AllocationAttributes& allocation_attr);
+  BufferBase(Allocator* alloc) : alloc_(alloc) {}
 
-  void* data() const override { return data_; }
-  size_t size() const override { return sizeof(T) * elem_; }
   TensorBuffer* root_buffer() override { return this; }
   void FillAllocationDescription(AllocationDescription* proto) const override {
+    void* data_ptr = data();
     int64 rb = size();
     proto->set_requested_bytes(rb);
     proto->set_allocator_name(alloc_->Name());
+    proto->set_ptr(reinterpret_cast<uintptr_t>(data_ptr));
     if (alloc_->TracksAllocationSizes()) {
-      int64 ab = alloc_->AllocatedSize(data_);
+      int64 ab = alloc_->AllocatedSize(data_ptr);
       proto->set_allocated_bytes(ab);
-      int64 id = alloc_->AllocationId(data_);
+      int64 id = alloc_->AllocationId(data_ptr);
       if (id > 0) {
         proto->set_allocation_id(id);
       }
@@ -73,8 +73,26 @@ class Buffer : public TensorBuffer {
     }
   }
 
+ protected:
+  void RecordDeallocation() {
+    LogMemory::RecordTensorDeallocation(alloc_->AllocationId(data()),
+                                        alloc_->Name());
+  }
+
+  Allocator* const alloc_;
+};
+
+// Typed ref-counted buffer: T[n].
+template <typename T>
+class Buffer : public BufferBase {
+ public:
+  Buffer(Allocator* a, int64 n);
+  Buffer(Allocator* a, int64 n, const AllocationAttributes& allocation_attr);
+
+  void* data() const override { return data_; }
+  size_t size() const override { return sizeof(T) * elem_; }
+
  private:
-  Allocator* alloc_;
   T* data_;
   int64 elem_;
 
@@ -82,6 +100,10 @@ class Buffer : public TensorBuffer {
 
   TF_DISALLOW_COPY_AND_ASSIGN(Buffer);
 };
+
+void LogUnexpectedSize(int64 actual, int64 expected) {
+  LOG(ERROR) << "Input size was " << actual << " and expected " << expected;
+}
 
 // A set of helper functions depending on T.
 template <typename T>
@@ -103,8 +125,7 @@ struct Helper {
   template <typename Source>
   static TensorBuffer* Decode(Allocator* a, const Source& in, int64 n) {
     if (in.size() != sizeof(T) * n) {
-      LOG(ERROR) << "Input size was " << in.size() << " and expected "
-                 << sizeof(T) * n;
+      LogUnexpectedSize(in.size(), sizeof(T) * n);
       return nullptr;
     }
     Buffer<T>* buf = new Buffer<T>(a, n);
@@ -214,6 +235,22 @@ struct ProtoHelper<complex64> {
 };
 
 template <>
+struct ProtoHelper<complex128> {
+  typedef Helper<double>::RepeatedFieldType FieldType;
+  static const complex128* Begin(const TensorProto& proto) {
+    return reinterpret_cast<const complex128*>(proto.dcomplex_val().data());
+  }
+  static size_t NumElements(const TensorProto& proto) {
+    return proto.dcomplex_val().size() / 2;
+  }
+  static void Fill(const complex128* data, size_t n, TensorProto* proto) {
+    const double* p = reinterpret_cast<const double*>(data);
+    FieldType copy(p, p + n * 2);
+    proto->mutable_dcomplex_val()->Swap(&copy);
+  }
+};
+
+template <>
 struct ProtoHelper<qint32> {
   typedef Helper<int32>::RepeatedFieldType FieldType;
   static const qint32* Begin(const TensorProto& proto) {
@@ -233,6 +270,7 @@ template <>
 struct ProtoHelper<bfloat16> {
   typedef Helper<float>::RepeatedFieldType FieldType;
   static const bfloat16* Begin(const TensorProto& proto) {
+    // TODO: Isn't this wrong, given that int_val is 32 bits long?
     return reinterpret_cast<const bfloat16*>(proto.int_val().data());
   }
   static size_t NumElements(const TensorProto& proto) {
@@ -246,17 +284,30 @@ struct ProtoHelper<bfloat16> {
   }
 };
 
+template <>
+struct ProtoHelper<Eigen::half> {
+  static void Fill(const Eigen::half* data, size_t n, TensorProto* proto) {
+    proto->mutable_half_val()->Reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+      proto->mutable_half_val()->AddAlreadyReserved(data[i].x);
+    }
+  }
+};
+
 template <typename T>
 Buffer<T>::Buffer(Allocator* a, int64 n)
-    : alloc_(a), data_(a->Allocate<T>(n)), elem_(n) {}
+    : BufferBase(a), data_(a->Allocate<T>(n)), elem_(n) {}
 
 template <typename T>
 Buffer<T>::Buffer(Allocator* a, int64 n,
                   const AllocationAttributes& allocation_attr)
-    : alloc_(a), data_(a->Allocate<T>(n, allocation_attr)), elem_(n) {}
+    : BufferBase(a), data_(a->Allocate<T>(n, allocation_attr)), elem_(n) {}
 
 template <typename T>
 Buffer<T>::~Buffer() {
+  if (LogMemory::IsEnabled()) {
+    RecordDeallocation();
+  }
   alloc_->Deallocate<T>(data_, elem_);
 }
 
@@ -285,6 +336,29 @@ TensorBuffer* FromProtoField(Allocator* a, const TensorProto& in, int64 n) {
     std::fill_n(data + in_n, n - in_n, last);
   } else {
     std::fill_n(data, n, T());
+  }
+  return buf;
+}
+
+// fp16 is opaque to the protobuf, so we deserialize these identical to uint16
+// but with data stored in half_val instead of int_val (ie., we don't use
+// ProtoHelper<uint16>).
+template <>
+TensorBuffer* FromProtoField<Eigen::half>(Allocator* a, const TensorProto& in,
+                                          int64 n) {
+  CHECK_GT(n, 0);
+  Buffer<Eigen::half>* buf = new Buffer<Eigen::half>(a, n);
+  uint16* data = buf->template base<uint16>();
+  const int64 in_n = in.half_val().size();
+  auto begin = in.half_val().begin();
+  if (n <= in_n) {
+    std::copy_n(begin, n, data);
+  } else if (in_n > 0) {
+    std::copy_n(begin, in_n, data);
+    const uint16 last = *(data + in_n - 1);
+    std::fill_n(data + in_n, n - in_n, last);
+  } else {
+    std::fill_n(data, n, 0);
   }
   return buf;
 }
@@ -330,12 +404,42 @@ bool Tensor::IsInitialized() const {
   return buf_ != nullptr && buf_->data() != nullptr;
 }
 
+void Tensor::CheckType(DataType expected_dtype) const {
+  CHECK_EQ(dtype(), expected_dtype);
+}
+
+void Tensor::CheckTypeAndIsAligned(DataType expected_dtype) const {
+  CHECK_EQ(dtype(), expected_dtype);
+  CHECK(IsAligned());
+}
+
+void Tensor::CheckIsAlignedAndSingleElement() const {
+  CHECK(IsAligned());
+  CHECK_EQ(1, NumElements()) << "Must have a one element tensor";
+}
+
 Tensor::~Tensor() { UnrefIfNonNull(buf_); }
 
 void Tensor::CopyFromInternal(const Tensor& other, const TensorShape& shape) {
   CHECK_EQ(shape.num_elements(), other.NumElements());
   shape_ = shape;
   set_dtype(other.dtype());
+  if (buf_ != other.buf_) {
+    UnrefIfNonNull(buf_);
+    buf_ = other.buf_;
+    RefIfNonNull(buf_);
+  }
+}
+
+void Tensor::UnsafeCopyFromInternal(const Tensor& other,
+                                    const TensorShape& shape) {
+  int in_size = DataTypeSize(other.dtype());
+  int out_size = DataTypeSize(shape.data_type());
+  CHECK_NE(in_size, 0);
+  CHECK_NE(out_size, 0);
+  CHECK_EQ(shape.num_elements() * out_size,
+           other.shape().num_elements() * in_size);
+  shape_ = shape;
   if (buf_ != other.buf_) {
     UnrefIfNonNull(buf_);
     buf_ = other.buf_;
@@ -363,6 +467,7 @@ void Tensor::CopyFromInternal(const Tensor& other, const TensorShape& shape) {
     CASE(int8, SINGLE_ARG(STMTS))                     \
     CASE(string, SINGLE_ARG(STMTS))                   \
     CASE(complex64, SINGLE_ARG(STMTS))                \
+    CASE(complex128, SINGLE_ARG(STMTS))               \
     CASE(int64, SINGLE_ARG(STMTS))                    \
     CASE(bool, SINGLE_ARG(STMTS))                     \
     CASE(qint32, SINGLE_ARG(STMTS))                   \
@@ -371,6 +476,7 @@ void Tensor::CopyFromInternal(const Tensor& other, const TensorShape& shape) {
     CASE(quint16, SINGLE_ARG(STMTS))                  \
     CASE(qint16, SINGLE_ARG(STMTS))                   \
     CASE(bfloat16, SINGLE_ARG(STMTS))                 \
+    CASE(Eigen::half, SINGLE_ARG(STMTS))              \
     case DT_INVALID:                                  \
       LOG(FATAL) << "Type not set";                   \
       break;                                          \
@@ -386,6 +492,10 @@ Tensor::Tensor(Allocator* a, DataType type, const TensorShape& shape)
   if (shape_.num_elements() > 0 || a->ShouldAllocateEmptyTensors()) {
     CASES(type, buf_ = new Buffer<T>(a, shape.num_elements()));
   }
+  if (IsInitialized() && LogMemory::IsEnabled()) {
+    LogMemory::RecordTensorAllocation("Unknown", LogMemory::UNKNOWN_STEP_ID,
+                                      *this);
+  }
 }
 
 Tensor::Tensor(Allocator* a, DataType type, const TensorShape& shape,
@@ -395,6 +505,11 @@ Tensor::Tensor(Allocator* a, DataType type, const TensorShape& shape,
   CHECK_NOTNULL(a);
   if (shape_.num_elements() > 0 || a->ShouldAllocateEmptyTensors()) {
     CASES(type, buf_ = new Buffer<T>(a, shape.num_elements(), allocation_attr));
+  }
+  if (!allocation_attr.allocation_will_be_logged && IsInitialized() &&
+      LogMemory::IsEnabled()) {
+    LogMemory::RecordTensorAllocation("Unknown (with attributes)",
+                                      LogMemory::UNKNOWN_STEP_ID, *this);
   }
 }
 
@@ -485,6 +600,12 @@ bool Tensor::FromProto(Allocator* a, const TensorProto& proto) {
   set_dtype(proto.dtype());
   UnrefIfNonNull(buf_);
   buf_ = p;
+  // TODO(misard) add tracking of which kernels and steps are calling
+  // FromProto.
+  if (IsInitialized() && LogMemory::IsEnabled()) {
+    LogMemory::RecordTensorAllocation("Unknown (from Proto)",
+                                      LogMemory::UNKNOWN_STEP_ID, *this);
+  }
   return true;
 }
 
@@ -524,6 +645,8 @@ bool Tensor::CanUseDMA() const {
 
 string Tensor::SummarizeValue(int64 max_entries) const {
   string ret;
+  // TODO(irving): Don't call NumElements and flat every time around this
+  // loop.
   for (int64 i = 0; i < std::min(max_entries, NumElements()); ++i) {
     if (i > 0) strings::StrAppend(&ret, " ");
     switch (dtype()) {
@@ -589,6 +712,47 @@ void Tensor::FillDescription(TensorDescription* description) const {
     buf_->FillAllocationDescription(
         description->mutable_allocation_description());
   }
+}
+
+gtl::InlinedVector<int64, 4> Tensor::ComputeFlatInnerDims(
+    int64 num_out_dims) const {
+  if (num_out_dims == dims()) {
+    return shape_.dim_sizes();
+  }
+  gtl::InlinedVector<int64, 4> out_dims(num_out_dims, 0);
+  const int64 num_elements = NumElements();
+  int64 prod_out_dims = 1;
+  for (int64 out_dim = num_out_dims - 1; out_dim > 0; --out_dim) {
+    const int64 in_dim = out_dim + (dims() - num_out_dims);
+    out_dims[out_dim] = (in_dim >= dims() || in_dim < 0) ? 1 : dim_size(in_dim);
+    prod_out_dims *= out_dims[out_dim];
+  }
+  if (prod_out_dims != 0) {
+    out_dims[0] = num_elements / prod_out_dims;
+  } else {
+    out_dims[0] = 0;
+  }
+  return out_dims;
+}
+
+gtl::InlinedVector<int64, 4> Tensor::ComputeFlatOuterDims(
+    int64 num_out_dims) const {
+  if (num_out_dims == dims()) {
+    return shape_.dim_sizes();
+  }
+  gtl::InlinedVector<int64, 4> out_dims(num_out_dims, 0);
+  const int64 num_elements = NumElements();
+  int64 prod_out_dims = 1;
+  for (int64 out_dim = 0; out_dim < num_out_dims - 1; ++out_dim) {
+    out_dims[out_dim] = out_dim >= dims() ? 1 : dim_size(out_dim);
+    prod_out_dims *= out_dims[out_dim];
+  }
+  if (prod_out_dims != 0) {
+    out_dims[num_out_dims - 1] = num_elements / prod_out_dims;
+  } else {
+    out_dims[num_out_dims - 1] = 0;
+  }
+  return out_dims;
 }
 
 }  // namespace tensorflow

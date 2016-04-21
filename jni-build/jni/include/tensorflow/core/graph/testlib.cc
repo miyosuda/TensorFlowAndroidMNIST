@@ -305,6 +305,20 @@ Node* Merge(Graph* g, Node* in0, gtl::ArraySlice<string> remaining_in) {
   return ret;
 }
 
+Node* Concat(Graph* g, Node* concat_dim, gtl::ArraySlice<Node*> tensors) {
+  std::vector<NodeBuilder::NodeOut> nodeouts;
+  nodeouts.reserve(tensors.size());
+  for (auto const t : tensors) {
+    nodeouts.emplace_back(t);
+  }
+  Node* ret;
+  TF_CHECK_OK(NodeBuilder(g->NewName("n"), "Concat")
+                  .Input(concat_dim)
+                  .Input(nodeouts)
+                  .Finalize(g, &ret));
+  return ret;
+}
+
 Node* Next(Graph* g, const string& name, Node* input) {
   Node* ret;
   TF_CHECK_OK(
@@ -347,6 +361,24 @@ Node* BroadcastGradientArgs(Graph* g, Node* s0, Node* s1) {
   TF_CHECK_OK(NodeBuilder(g->NewName("n"), "BroadcastGradientArgs")
                   .Input(s0)
                   .Input(s1)
+                  .Finalize(g, &ret));
+  return ret;
+}
+
+Node* Gather(Graph* g, Node* in0, Node* in1) {
+  Node* ret;
+  TF_CHECK_OK(NodeBuilder(g->NewName("n"), "Gather")
+                  .Input(in0)
+                  .Input(in1)
+                  .Finalize(g, &ret));
+  return ret;
+}
+
+Node* GetSessionTensor(Graph* g, Node* in) {
+  Node* ret;
+  TF_CHECK_OK(NodeBuilder(g->NewName("n"), "GetSessionTensor")
+                  .Input(in, 0)
+                  .Attr("dtype", DT_FLOAT)
                   .Finalize(g, &ret));
   return ret;
 }

@@ -24,6 +24,7 @@ import time
 
 import six
 
+from tensorflow.python.framework import errors
 from tensorflow.python.platform import logging
 from tensorflow.python.util import compat
 
@@ -131,18 +132,57 @@ class Coordinator(object):
     # Event set when threads must stop.
     self._stop_event = threading.Event()
     # Python exc_info to report.
+    # If not None, it should hold the returned value of sys.exc_info(), which is
+    # a tuple containing exception (type, value, traceback).
     self._exc_info_to_raise = None
+
+  def _filter_exception(self, ex):
+    """Check if the exception indicated in 'ex' should be ignored.
+
+    This method examines `ex` to check if it is an exception that should be
+    reported to the users.  If yes, it returns `ex` as is, otherwise it returns
+    None.
+
+    The code returns None for exceptions that are used for control flow such as
+    the OutOfRangeError raised by the dequeue operations to indicate that a
+    queue was closed after its contents were dequeued.
+
+    Args:
+      ex: None, an `Exception`, or a Python `exc_info` tuple as returned by
+        `sys.exc_info()`.
+
+    Returns:
+      ex or None.
+    """
+    if isinstance(ex, tuple):
+      ex2 = ex[1]
+    else:
+      ex2 = ex
+    # OutOfRangeError is used to indicate "end of input".  We do not want to
+    # report an exception for it.  TODO(touts): Likely also need to ignore
+    # some of the Aborted and Cancelled exceptions raised by queue ops after
+    # queues are closed, but this can only be done after these exceptions have
+    # been clearly identified.
+    if isinstance(ex2, (errors.OutOfRangeError)):
+      # Ignore the exception.
+      ex = None
+    return ex
 
   def request_stop(self, ex=None):
     """Request that the threads stop.
 
     After this is called, calls to `should_stop()` will return `True`.
 
+    Note: If an exception is being passed in, in must be in the context of
+    handling the exception (i.e. `try: ... except Exception as ex: ...`) and not
+    a newly created one.
+
     Args:
       ex: Optional `Exception`, or Python `exc_info` tuple as returned by
         `sys.exc_info()`.  If this is the first call to `request_stop()` the
         corresponding exception is recorded and re-raised from `join()`.
     """
+    ex = self._filter_exception(ex)
     with self._lock:
       if not self._stop_event.is_set():
         if ex and self._exc_info_to_raise is None:
@@ -154,6 +194,22 @@ class Coordinator(object):
             logging.info("Error reported to Coordinator: %s",
                          compat.as_str_any(ex))
             self._exc_info_to_raise = sys.exc_info()
+          # self._exc_info_to_raise should contain a tuple containing exception
+          # (type, value, traceback)
+          if (len(self._exc_info_to_raise) != 3 or
+              not self._exc_info_to_raise[0] or
+              not self._exc_info_to_raise[1]):
+            # Raise, catch and record the exception here so that error happens
+            # where expected.
+            try:
+              raise ValueError(
+                  "ex must be a tuple or sys.exc_info must return the current "
+                  "exception: %s"
+                  % self._exc_info_to_raise)
+            except ValueError:
+              # Record this error so it kills the coordinator properly.
+              self._exc_info_to_raise = sys.exc_info()
+
         self._stop_event.set()
 
   def clear_stop(self):
@@ -335,7 +391,6 @@ class LooperThread(threading.Thread):
     looper.start()
     return looper
 
-  # pylint: disable=broad-except
   def run(self):
     with self._coord.stop_on_exception():
       self.start_loop()
@@ -349,10 +404,14 @@ class LooperThread(threading.Thread):
         while not self._coord.wait_for_stop(next_timer_time - time.time()):
           next_timer_time += self._timer_interval_secs
           self.run_loop()
-  # pylint: enable=broad-except
+      self.stop_loop()
 
   def start_loop(self):
     """Called when the thread starts."""
+    pass
+
+  def stop_loop(self):
+    """Called when the thread stops."""
     pass
 
   def run_loop(self):

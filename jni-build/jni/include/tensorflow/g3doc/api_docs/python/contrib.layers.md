@@ -13,7 +13,7 @@ common machine learning algorithms.
 
 - - -
 
-### `tf.contrib.layers.convolution2d(x, num_output_channels, kernel_size, activation_fn=None, stride=(1, 1), padding='SAME', weight_init=_initializer, bias_init=_initializer, name=None, weight_collections=None, bias_collections=None, output_collections=None, weight_regularizer=None, bias_regularizer=None)` {#convolution2d}
+### `tf.contrib.layers.convolution2d(x, num_output_channels, kernel_size, activation_fn=None, stride=(1, 1), padding='SAME', weight_init=_initializer, bias_init=_initializer, name=None, weight_collections=None, bias_collections=None, output_collections=None, trainable=True, weight_regularizer=None, bias_regularizer=None)` {#convolution2d}
 
 Adds the parameters for a conv2d layer and returns the output.
 
@@ -63,6 +63,8 @@ This is only applied to weights and not the bias.
 *  <b>`weight_collections`</b>: List of graph collections to which weights are added.
 *  <b>`bias_collections`</b>: List of graph collections to which biases are added.
 *  <b>`output_collections`</b>: List of graph collections to which outputs are added.
+*  <b>`trainable`</b>: If `True` also add variables to the graph collection
+    `GraphKeys.TRAINABLE_VARIABLES` (see tf.Variable).
 *  <b>`weight_regularizer`</b>: A regularizer like the result of
     `l1_regularizer` or `l2_regularizer`. Used for weights.
 *  <b>`bias_regularizer`</b>: A regularizer like the result of
@@ -80,7 +82,7 @@ This is only applied to weights and not the bias.
 
 - - -
 
-### `tf.contrib.layers.fully_connected(x, num_output_units, activation_fn=None, weight_init=_initializer, bias_init=_initializer, name=None, weight_collections=('weights',), bias_collections=('biases',), output_collections=('activations',), weight_regularizer=None, bias_regularizer=None)` {#fully_connected}
+### `tf.contrib.layers.fully_connected(x, num_output_units, activation_fn=None, weight_init=_initializer, bias_init=_initializer, name=None, weight_collections=('weights',), bias_collections=('biases',), output_collections=('activations',), trainable=True, weight_regularizer=None, bias_regularizer=None)` {#fully_connected}
 
 Adds the parameters for a fully connected layer and returns the output.
 
@@ -88,6 +90,17 @@ A fully connected layer is generally defined as a matrix multiply:
 `y = f(w * x + b)` where `f` is given by `activation_fn`. If
 `activation_fn` is `None`, the result of `y = w * x + b` is
 returned.
+
+If `x` has shape [\\\(\\text{dim}_0, \\text{dim}_1, ..., \\text{dim}_n\\\)]
+with more than 2 dimensions (\\\(n > 1\\\)), then we repeat the matrix
+multiply along the first dimensions. The result r is a tensor of shape
+[\\\(\\text{dim}_0, ..., \\text{dim}_{n-1},\\\) `num_output_units`],
+where \\\( r_{i_0, ..., i_{n-1}, k} =
+\\sum_{0 \\leq j < \\text{dim}_n} x_{i_0, ... i_{n-1}, j} \cdot w_{j, k}\\\).
+This is accomplished by reshaping `x` to 2-D
+[\\\(\\text{dim}_0 \\cdot ... \\cdot \\text{dim}_{n-1}, \\text{dim}_n\\\)]
+before the matrix multiply and afterwards reshaping it to
+[\\\(\\text{dim}_0, ..., \\text{dim}_{n-1},\\\) `num_output_units`].
 
 This op creates `w` and optionally `b`. Bias (`b`) can be disabled by setting
 `bias_init` to `None`.
@@ -126,6 +139,8 @@ collection.
 *  <b>`weight_collections`</b>: List of graph collections to which weights are added.
 *  <b>`bias_collections`</b>: List of graph collections to which biases are added.
 *  <b>`output_collections`</b>: List of graph collections to which outputs are added.
+*  <b>`trainable`</b>: If `True` also add variables to the graph collection
+    `GraphKeys.TRAINABLE_VARIABLES` (see tf.Variable).
 *  <b>`weight_regularizer`</b>: A regularizer like the result of
     `l1_regularizer` or `l2_regularizer`. Used for weights.
 *  <b>`bias_regularizer`</b>: A regularizer like the result of
@@ -134,6 +149,11 @@ collection.
 ##### Returns:
 
   The output of the fully connected layer.
+
+##### Raises:
+
+
+*  <b>`ValueError`</b>: if x has rank less than 2 or if its last dimension is not set.
 
 
 
@@ -193,6 +213,23 @@ Small values of L2 can help prevent overfitting the training data.
 
 *  <b>`ValueError`</b>: If scale is outside of the range [0.0, 1.0] or if scale is not a
   float.
+
+
+- - -
+
+### `tf.contrib.layers.sum_regularizer(regularizer_list)` {#sum_regularizer}
+
+Returns a function that applies the sum of multiple regularizers.
+
+##### Args:
+
+
+*  <b>`regularizer_list`</b>: A list of regularizers to apply.
+
+##### Returns:
+
+  A function with signature `sum_reg(weights, name=None)` that applies the
+  sum of all the input regularizers.
 
 
 
@@ -301,7 +338,7 @@ activation.
 
 - - -
 
-### `tf.contrib.layers.summarize_tensor(tensor)` {#summarize_tensor}
+### `tf.contrib.layers.summarize_tensor(tensor, tag=None)` {#summarize_tensor}
 
 Summarize a tensor using a suitable summary type.
 
@@ -313,6 +350,7 @@ other tensors, `histogram_summary` is used.
 
 
 *  <b>`tensor`</b>: The tensor to summarize
+*  <b>`tag`</b>: The tag to use, if None then use tensor's op's name.
 
 ##### Returns:
 
@@ -349,31 +387,93 @@ Summarize activations, using `summarize_activation` to summarize.
 ## Other Functions and Classes
 - - -
 
-### `tf.contrib.layers.assert_same_float_dtype(tensors=None, dtype=None)` {#assert_same_float_dtype}
+### `tf.contrib.layers.apply_regularization(regularizer, weights_list=None)` {#apply_regularization}
 
-Validate and return float type based on `tensors` and `dtype`.
+Returns the summed penalty by applying `regularizer` to the `weights_list`.
 
-For ops such as matrix multiplication, inputs and weights must be of the
-same float type. This function validates that all `tensors` are the same type,
-validates that type is `dtype` (if supplied), and returns the type. Type must
-be `dtypes.float32` or `dtypes.float64`. If neither `tensors` nor
-`dtype` is supplied, default to `dtypes.float32`.
+Adding a regularization penalty over the layer weights and embedding weights
+can help prevent overfitting the training data. Regularization over layer
+biases is less common/useful, but assuming proper data preprocessing/mean
+subtraction, it usually shouldn't hurt much either.
 
 ##### Args:
 
 
-*  <b>`tensors`</b>: Tensors of input values. Can include `None` elements, which will be
-      ignored.
-*  <b>`dtype`</b>: Expected type.
+*  <b>`regularizer`</b>: A function that takes a single `Tensor` argument and returns
+    a scalar `Tensor` output.
+*  <b>`weights_list`</b>: List of weights `Tensors` or `Variables` to apply
+    `regularizer` over. Defaults to the `GraphKeys.WEIGHTS` collection if
+    `None`.
 
 ##### Returns:
 
-  Validated type.
+  A scalar representing the overall regularization penalty.
 
 ##### Raises:
 
 
-*  <b>`ValueError`</b>: if neither `tensors` nor `dtype` is supplied, or result is not
-      float.
+*  <b>`ValueError`</b>: If `regularizer` does not return a scalar output.
+
+
+- - -
+
+### `tf.contrib.layers.make_all(module_name, doc_string_modules=None)` {#make_all}
+
+Generate `__all__` from the docstring of one or more modules.
+
+Usage: `make_all(__name__)` or
+`make_all(__name__, [sys.modules(__name__), other_module])`. The doc string
+modules must each a docstring, and `__all__` will contain all symbols with
+`@@` references, where that symbol currently exists in the module named
+`module_name`.
+
+##### Args:
+
+
+*  <b>`module_name`</b>: The name of the module (usually `__name__`).
+*  <b>`doc_string_modules`</b>: a list of modules from which to take docstring.
+  If None, then a list containing only the module named `module_name` is used.
+
+##### Returns:
+
+  A list suitable for use as `__all__`.
+
+
+- - -
+
+### `tf.contrib.layers.optimize_loss(loss, global_step, learning_rate, optimizer, clip_gradients=None, moving_average_decay=0.9, learning_rate_decay_fn=None, variables=None)` {#optimize_loss}
+
+Given loss and parameters for optimizer, returns a training op.
+
+##### Args:
+
+
+*  <b>`loss`</b>: Tensor, 0 dimensional.
+*  <b>`global_step`</b>: Tensor, step counter for each update.
+*  <b>`learning_rate`</b>: float or Tensor, magnitude of update per each training step.
+*  <b>`optimizer`</b>: string, class or optimizer instance, used as trainer.
+             string should be name of optimizer, like 'SGD',
+               'Adam', 'Adagrad'. Full list in OPTIMIZER_CLS_NAMES constant.
+             class should be sub-class of tf.Optimizer that implements
+               `compute_gradients` and `apply_gradients` functions.
+             optimizer instance should be instantion of tf.Optimizer sub-class
+               and have `compute_gradients` and `apply_gradients` functions.
+*  <b>`clip_gradients`</b>: float or None, clips gradients by this value.
+*  <b>`moving_average_decay`</b>: float or None, takes into account previous loss
+                        to make learning smoother due to outliers.
+*  <b>`learning_rate_decay_fn`</b>: function, takes learning_rate and global_step
+                          Tensors, returns Tensor. Can be used to implement
+                          any learning rate decay funcitons.
+                          For example: tf.train.exponential_decay.
+*  <b>`variables`</b>: list of variables to optimizer or none.
+
+##### Returns:
+
+  Training op.
+
+##### Raises:
+
+
+*  <b>`ValueError`</b>: if optimizer is wrong type.
 
 

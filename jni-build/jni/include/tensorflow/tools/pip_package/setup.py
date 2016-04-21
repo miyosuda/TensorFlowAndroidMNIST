@@ -27,7 +27,7 @@ from setuptools import find_packages, setup, Command, Extension
 from setuptools.command.install import install as InstallCommandBase
 from setuptools.dist import Distribution
 
-_VERSION = '0.7.1'
+_VERSION = '0.8.0rc0'
 
 numpy_version = "1.8.2"
 if platform.system() == "Darwin":
@@ -51,7 +51,7 @@ else:
 
 # pylint: disable=line-too-long
 CONSOLE_SCRIPTS = [
-    'tensorboard = tensorflow.tensorboard.backend.tensorboard:main',
+    'tensorboard = tensorflow.tensorboard.tensorboard:main',
 ]
 # pylint: enable=line-too-long
 
@@ -180,7 +180,6 @@ setup(
     include_package_data=True,
     package_data={
         'tensorflow': ['python/_pywrap_tensorflow.so',
-                       'core/libtensorflow_framework.so',
                        'tensorboard/dist/index.html',
                        'tensorboard/dist/tf-tensorboard.html',
                        'tensorboard/lib/css/global.css',

@@ -353,12 +353,14 @@ REGISTER_OP("StackPush")
     .Input("elem: T")
     .Output("output: T")
     .Attr("T: type")
+    .Attr("swap_memory: bool = false")
     .Doc(R"doc(
 Push an element onto the stack.
 
 handle: The handle to a stack.
 elem: The tensor to be pushed onto the stack.
 output: The same tensor as the input 'elem'.
+swap_memory: Swap `elem` to CPU. Default to false.
 )doc");
 
 REGISTER_OP("StackPop")
@@ -369,8 +371,8 @@ REGISTER_OP("StackPop")
 Pop the element at the top of the stack.
 
 handle: The handle to a stack.
-elem_type: The type of the elem that is popped.
 elem: The tensor that is popped from the top of the stack.
+elem_type: The type of the elem that is popped.
 )doc");
 
 REGISTER_OP("StackClose")
@@ -387,6 +389,7 @@ REGISTER_OP("TensorArray")
     .Input("size: int32")
     .Attr("dtype: type")
     .Attr("dynamic_size: bool = false")
+    .Attr("clear_after_read: bool = true")
     .Attr("tensor_array_name: string = ''")
     .Output("handle: Ref(string)")
     .SetIsStateful()
@@ -399,6 +402,9 @@ size: The size of the array.
 dtype: The type of the elements on the tensor_array.
 dynamic_size: A boolean that determines whether writes to the TensorArray
   are allowed to grow the size.  By default, this is not allowed.
+clear_after_read: If true (default), Tensors in the TensorArray are cleared
+  after being read.  This disables multiple read semantics but allows early
+  release of memory.
 tensor_array_name: Overrides the name used for the temporary tensor_array
   resource. Default value is the name of the 'TensorArray' op (which
   is guaranteed unique).
@@ -481,7 +487,7 @@ REGISTER_OP("TensorArrayRead")
     .Output("value: dtype")
     .Attr("dtype: type")
     .Doc(R"doc(
-Read an element from the TensorArray.
+Read an element from the TensorArray into output `value`.
 
 handle: The handle to a TensorArray.
 dtype: The type of the elem that is returned.
@@ -495,7 +501,7 @@ REGISTER_OP("TensorArrayPack")
     .Output("value: dtype")
     .Attr("dtype: type")
     .Doc(R"doc(
-Pack the elements from the TensorArray.
+Pack the elements from the TensorArray into output `value`.
 
 All elements must have the same shape.
 
@@ -517,6 +523,73 @@ Unpack the data from the input value into TensorArray elements.
 
 handle: The handle to a TensorArray.
 value: The concatenated tensor to write to the TensorArray.
+flow_in: A float scalar that enforces proper chaining of operations.
+flow_out: A float scalar that enforces proper chaining of operations.
+)doc");
+
+REGISTER_OP("TensorArrayConcat")
+    .Input("handle: Ref(string)")
+    .Input("flow_in: float")
+    .Output("value: dtype")
+    .Output("lengths: int64")
+    .Attr("dtype: type")
+    .Doc(R"doc(
+Concat the elements from the TensorArray into value `value`.
+
+Takes `T` elements of shapes
+
+  ```
+  (n0 x d0 x d1 x ...), (n1 x d0 x d1 x ...), ..., (n(T-1) x d0 x d1 x ...)
+  ```
+
+and concatenates them into a Tensor of shape:
+
+  ```(n0 + n1 + ... + n(T-1) x d0 x d1 x ...)```
+
+All elements must have the same shape (excepting the first dimension).
+
+handle: The handle to a TensorArray.
+dtype: The type of the elem that is returned.
+flow_in: A float scalar that enforces proper chaining of operations.
+value: All of the elements in the TensorArray, concatenated along the first
+  axis.
+lengths: A vector of the row sizes of the original T elements in the
+  value output.  In the example above, this would be the values:
+  `(n1, n2, ..., n(T-1))`.
+)doc");
+
+REGISTER_OP("TensorArraySplit")
+    .Input("handle: Ref(string)")
+    .Input("value: T")
+    .Input("lengths: int64")
+    .Input("flow_in: float")
+    .Output("flow_out: float")
+    .Attr("T: type")
+    .Doc(R"doc(
+Split the data from the input value into TensorArray elements.
+
+Assuming that `lengths` takes on values
+
+  ```(n0, n1, ..., n(T-1))```
+
+and that `value` has shape
+
+  ```(n0 + n1 + ... + n(T-1) x d0 x d1 x ...)```,
+
+this splits values into a TensorArray with T tensors.
+
+TensorArray index t will be the subtensor of values with starting position
+
+  ```(n0 + n1 + ... + n(t-1), 0, 0, ...)```
+
+and having size
+
+  ```nt x d0 x d1 x ...```
+
+handle: The handle to a TensorArray.
+value: The concatenated tensor to write to the TensorArray.
+lengths: The vector of lengths, how to split the rows of value into the
+  TensorArray.
 flow_in: A float scalar that enforces proper chaining of operations.
 flow_out: A float scalar that enforces proper chaining of operations.
 )doc");
@@ -611,6 +684,37 @@ Table initializer that takes two tensors for keys and values respectively.
 table_handle: Handle to a table which will be initialized.
 keys: Keys of type Tkey.
 values: Values of type Tval. Same shape as `keys`.
+)doc");
+
+REGISTER_OP("GetSessionHandle")
+    .Input("value: T")
+    .Output("handle: string")
+    .Attr("T: type")
+    .Doc(R"doc(
+Store the input tensor in the state of the current session.
+
+value: The tensor to be stored.
+handle: The handle for the tensor stored in the session state.
+)doc");
+
+REGISTER_OP("GetSessionTensor")
+    .Input("handle: string")
+    .Output("value: dtype")
+    .Attr("dtype: type")
+    .Doc(R"doc(
+Get the value of the tensor specified by its handle.
+
+handle: The handle for a tensor stored in the session state.
+value: The tensor for the given handle.
+dtype: The type of the output value.
+)doc");
+
+REGISTER_OP("DeleteSessionTensor")
+    .Input("handle: string")
+    .Doc(R"doc(
+Delete the tensor specified by its handle in the session.
+
+handle: The handle for a tensor stored in the session state.
 )doc");
 
 }  // namespace tensorflow

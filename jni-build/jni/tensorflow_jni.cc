@@ -28,14 +28,17 @@ limitations under the License.
 #include <sstream>
 #include <string>
 
+#include "tensorflow/core/framework/step_stats.pb.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/types.pb.h"
+#include "tensorflow/core/lib/strings/stringprintf.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/public/session.h"
-#include "tensorflow/examples/android/jni/jni_utils.h"
+#include "tensorflow/core/util/stat_summarizer.h"
+#include "jni_utils.h"
 
 static const int PIXEL_SIZE = 784;
 static std::unique_ptr<tensorflow::Session> session;

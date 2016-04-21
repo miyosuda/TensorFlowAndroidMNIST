@@ -99,11 +99,12 @@ class Index(Document):
         print("", file=f)
 
 
-def collect_members(module_to_name):
+def collect_members(module_to_name, exclude=()):
   """Collect all symbols from a list of modules.
 
   Args:
     module_to_name: Dictionary mapping modules to short names.
+    exclude: Set of fully qualified names to exclude.
 
   Returns:
     Dictionary mapping name to (fullname, member) pairs.
@@ -116,6 +117,8 @@ def collect_members(module_to_name):
           not _always_drop_symbol_re.match(name) and
           (all_names is None or name in all_names)):
         fullname = '%s.%s' % (module_name, name)
+        if fullname in exclude:
+          continue
         if name in members:
           other_fullname, other_member = members[name]
           if member is not other_member:
@@ -484,6 +487,9 @@ class Library(Document):
       names = self._members.items()
     else:
       names = inspect.getmembers(self._module)
+      all_names = getattr(self._module, "__all__", None)
+      if all_names is not None:
+        names = [(n, m) for n, m in names if n in all_names]
     leftovers = []
     for name, _ in names:
       if name in self._members and name not in self._documented:

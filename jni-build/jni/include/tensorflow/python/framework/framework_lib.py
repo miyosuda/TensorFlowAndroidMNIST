@@ -37,12 +37,14 @@
 @@get_default_graph
 @@reset_default_graph
 @@import_graph_def
+@@load_file_system_library
 @@load_op_library
 
 ## Graph collections
 
 @@add_to_collection
 @@get_collection
+@@get_collection_ref
 @@GraphKeys
 
 ## Defining new operations
@@ -82,6 +84,7 @@ from tensorflow.python.framework.ops import reset_default_graph
 from tensorflow.python.framework.ops import GraphKeys
 from tensorflow.python.framework.ops import add_to_collection
 from tensorflow.python.framework.ops import get_collection
+from tensorflow.python.framework.ops import get_collection_ref
 from tensorflow.python.framework.ops import convert_to_tensor
 from tensorflow.python.framework.ops import convert_to_tensor_or_indexed_slices
 from tensorflow.python.framework.random_seed import get_seed
@@ -98,6 +101,7 @@ from tensorflow.python.framework.tensor_shape import TensorShape
 # Needed when interfacing tensorflow to new array libraries
 from tensorflow.python.framework.ops import register_tensor_conversion_function
 
+# go/tf-wildcard-import
 # pylint: disable=wildcard-import
 from tensorflow.python.framework.dtypes import *
 

@@ -155,8 +155,19 @@ Node* Select(Graph* g, Node* c, Node* inx, Node* iny);
 // Casts "in" into data type "dst".
 Node* Cast(Graph* g, Node* in, DataType dst);
 
+// Perform gather op on params "in0" with indicies "in1".
+Node* Gather(Graph* g, Node* in0, Node* in1);
+
 // Computes the args needed broadcast gradient function.
 Node* BroadcastGradientArgs(Graph* g, Node* s0, Node* s1);
+
+// Gets a tensor stored in the session state.
+Node* GetSessionTensor(Graph* g, Node* in);
+
+// Adds a Concat node in "g". The first input is "concat_dim", the
+// dimension to concatenate on, and the tensors to concatenate are
+// given in "tensors".
+Node* Concat(Graph* g, Node* concat_dim, gtl::ArraySlice<Node*> tensors);
 
 }  // end namespace graph
 }  // end namespace test

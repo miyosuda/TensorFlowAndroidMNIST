@@ -14,19 +14,19 @@ Default Tensor constructor. Creates a 1-dimension, 0-element float tensor.
 
 #### `tensorflow::Tensor::Tensor(DataType type, const TensorShape &shape)` {#tensorflow_Tensor_Tensor}
 
-Creates a Tensor of the given `type` and `shape`.
+Creates a Tensor of the given `type` and `shape`. If LogMemory::IsEnabled() the allocation is logged as coming from an unknown kernel and step. Calling the Tensor constructor directly from within an Op is deprecated: use the OpKernelConstruction/OpKernelContext allocate_* methods to allocate a new tensor, which record the kernel and step.
 
 The underlying buffer is allocated using a ` CPUAllocator `.
 
 #### `tensorflow::Tensor::Tensor(Allocator *a, DataType type, const TensorShape &shape)` {#tensorflow_Tensor_Tensor}
 
-Creates a tensor with the input `type` and `shape`, using the allocator `a` to allocate the underlying buffer.
+Creates a tensor with the input `type` and `shape`, using the allocator `a` to allocate the underlying buffer. If LogMemory::IsEnabled() the allocation is logged as coming from an unknown kernel and step. Calling the Tensor constructor directly from within an Op is deprecated: use the OpKernelConstruction/OpKernelContext allocate_* methods to allocate a new tensor, which record the kernel and step.
 
 `a` must outlive the lifetime of this Tensor .
 
 #### `tensorflow::Tensor::Tensor(Allocator *a, DataType type, const TensorShape &shape, const AllocationAttributes &allocation_attr)` {#tensorflow_Tensor_Tensor}
 
-Creates a tensor with the input `type` and `shape`, using the allocator `a` and the specified "allocation_attr" to allocate the underlying buffer.
+Creates a tensor with the input `type` and `shape`, using the allocator `a` and the specified "allocation_attr" to allocate the underlying buffer. If the kernel and step are known allocation_attr.allocation_will_be_logged should be set to true and LogMemory::RecordTensorAllocation should be called after the tensor is constructed. Calling the Tensor constructor directly from within an Op is deprecated: use the OpKernelConstruction/OpKernelContext allocate_* methods to allocate a new tensor, which record the kernel and step.
 
 `a` must outlive the lifetime of this Tensor .
 
@@ -108,6 +108,12 @@ Returns the estimated memory usage of this tensor.
 
 
 
+#### `bool tensorflow::Tensor::IsAligned() const` {#bool_tensorflow_Tensor_IsAligned}
+
+Returns true iff this tensor is aligned.
+
+
+
 #### `Tensor& tensorflow::Tensor::operator=(const Tensor &other)` {#Tensor_tensorflow_Tensor_operator_}
 
 Assign operator. This tensor shares other&apos;s underlying storage.
@@ -176,7 +182,7 @@ Example:
 
 
 
-#### `TTypes<T>::Flat tensorflow::Tensor::flat()` {#TTypes_T_Flat_tensorflow_Tensor_flat}
+#### `TTypes< T >::Flat tensorflow::Tensor::flat()` {#TTypes_T_Flat_tensorflow_Tensor_flat}
 
 Return the tensor data as an `Eigen::Tensor` of the data type and a specified shape.
 
@@ -240,7 +246,7 @@ Const versions of all the methods above.
 
 
 
-#### `TTypes<T>::ConstFlat tensorflow::Tensor::flat() const` {#TTypes_T_ConstFlat_tensorflow_Tensor_flat}
+#### `TTypes< T >::ConstFlat tensorflow::Tensor::flat() const` {#TTypes_T_ConstFlat_tensorflow_Tensor_flat}
 
 
 
@@ -258,7 +264,7 @@ Const versions of all the methods above.
 
 
 
-#### `TTypes<T>::ConstMatrix tensorflow::Tensor::flat_outer_dims() const` {#TTypes_T_ConstMatrix_tensorflow_Tensor_flat_outer_dims}
+#### `TTypes< T >::ConstMatrix tensorflow::Tensor::flat_outer_dims() const` {#TTypes_T_ConstMatrix_tensorflow_Tensor_flat_outer_dims}
 
 
 
@@ -309,3 +315,11 @@ The returned ` StringPiece ` may point to memory location on devices that the CP
 NOTE: The underlying tensor buffer is refcounted, so the lifetime of the contents mapped by the ` StringPiece ` matches the lifetime of the buffer; callers should arrange to make sure the buffer does not get destroyed while the ` StringPiece ` is still used.
 
 REQUIRES: `DataTypeCanUseMemcpy(dtype())`.
+
+#### `void tensorflow::Tensor::UnsafeCopyFromInternal(const Tensor &, const TensorShape &)` {#void_tensorflow_Tensor_UnsafeCopyFromInternal}
+
+
+
+Copy the other tensor into this tensor and reshape it and reinterpret the buffer&apos;s datatype.
+
+This tensor shares other&apos;s underlying storage.

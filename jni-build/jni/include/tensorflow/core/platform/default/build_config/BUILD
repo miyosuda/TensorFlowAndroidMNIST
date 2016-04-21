@@ -60,12 +60,6 @@ cc_library(
     deps = [],
 )
 
-cc_library(
-    name = "cuda_runtime_extra",
-    linkstatic = 1,
-    deps = [],
-)
-
 filegroup(
     name = "android_proto_lib_portable_proto",
     srcs = [],
@@ -83,4 +77,16 @@ cc_library(
     deps = [
         "//third_party/gpus/cuda:cudart",
     ],
+)
+
+filegroup(
+    name = "all_files",
+    srcs = glob(
+        ["**/*"],
+        exclude = [
+            "**/METADATA",
+            "**/OWNERS",
+        ],
+    ),
+    visibility = ["//tensorflow:__subpackages__"],
 )

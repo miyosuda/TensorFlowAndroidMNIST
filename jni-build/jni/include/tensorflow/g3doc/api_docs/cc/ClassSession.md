@@ -14,6 +14,18 @@ Only one thread must call Close() , and Close() must only be called after all ot
 
 ###Member Details
 
+#### `tensorflow::Session::Session()` {#tensorflow_Session_Session}
+
+
+
+
+
+#### `virtual tensorflow::Session::~Session()` {#virtual_tensorflow_Session_Session}
+
+
+
+
+
 #### `virtual Status tensorflow::Session::Create(const GraphDef &graph)=0` {#virtual_Status_tensorflow_Session_Create}
 
 Create the graph to be used for the session.
@@ -38,15 +50,39 @@ REQUIRES: The name of each Tensor of the input or output must match a "Tensor en
 
 REQUIRES: outputs is not nullptr if `output_tensor_names` is non-empty.
 
+#### `virtual Status tensorflow::Session::Create(const RunOptions &run_options, const GraphDef &graph)` {#virtual_Status_tensorflow_Session_Create}
+
+Implementations which support `RunOptions`.
+
+NOTE: This API is still experimental and may change.
+
+#### `virtual Status tensorflow::Session::Extend(const RunOptions &run_options, const GraphDef &graph)` {#virtual_Status_tensorflow_Session_Extend}
+
+
+
+
+
+#### `virtual Status tensorflow::Session::Close(const RunOptions &run_options)` {#virtual_Status_tensorflow_Session_Close}
+
+
+
+
+
+#### `virtual Status tensorflow::Session::Run(const RunOptions &run_options, const std::vector< std::pair< string, Tensor > > &inputs, const std::vector< string > &output_tensor_names, const std::vector< string > &target_node_names, std::vector< Tensor > *outputs, RunMetadata *run_metadata)` {#virtual_Status_tensorflow_Session_Run}
+
+Like `Run`, but allows users to pass in a `RunOptions` proto and to retrieve non-Tensor metadata output via a `RunMetadata` proto for this step. `run_metadata` may be nullptr, in which case any metadata output is discarded. NOTE: This API is still experimental and may change.
+
+
+
 #### `virtual Status tensorflow::Session::PRunSetup(const std::vector< string > &input_names, const std::vector< string > &output_names, const std::vector< string > &target_nodes, string *handle)` {#virtual_Status_tensorflow_Session_PRunSetup}
 
-Sets up a graph for partial execution. All future feeds and fetches are specified by &apos;input_names&apos; and &apos;output_names&apos;. Returns &apos;handle&apos; that can be used to perform a sequence of partial feeds and fetches. NOTE: This API is still experimental and may change.
+Sets up a graph for partial execution. All future feeds and fetches are specified by `input_names` and `output_names`. Returns `handle` that can be used to perform a sequence of partial feeds and fetches. NOTE: This API is still experimental and may change.
 
 
 
 #### `virtual Status tensorflow::Session::PRun(const string &handle, const std::vector< std::pair< string, Tensor > > &inputs, const std::vector< string > &output_names, std::vector< Tensor > *outputs)` {#virtual_Status_tensorflow_Session_PRun}
 
-Continues the pending execution specified by &apos;handle&apos; with the provided input tensors and fills `outputs` for the endpoints specified in `output_names`. NOTE: This API is still experimental and may change.
+Continues the pending execution specified by `handle` with the provided input tensors and fills `outputs` for the endpoints specified in `output_names`. NOTE: This API is still experimental and may change.
 
 
 
@@ -55,9 +91,3 @@ Continues the pending execution specified by &apos;handle&apos; with the provide
 Closes this session.
 
 Closing a session releases the resources used by this session on the TensorFlow runtime (specified during session creation by the ` SessionOptions::target ` field).
-
-#### `virtual tensorflow::Session::~Session()` {#virtual_tensorflow_Session_Session}
-
-
-
-

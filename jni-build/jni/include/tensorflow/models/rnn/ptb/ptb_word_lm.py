@@ -61,8 +61,6 @@ import time
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.models.rnn import rnn_cell
-from tensorflow.models.rnn import seq2seq
 from tensorflow.models.rnn.ptb import reader
 
 flags = tf.flags
@@ -91,11 +89,11 @@ class PTBModel(object):
     # Slightly better results can be obtained with forget gate biases
     # initialized to 1 but the hyperparameters of the model would need to be
     # different than reported in the paper.
-    lstm_cell = rnn_cell.BasicLSTMCell(size, forget_bias=0.0)
+    lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(size, forget_bias=0.0)
     if is_training and config.keep_prob < 1:
-      lstm_cell = rnn_cell.DropoutWrapper(
+      lstm_cell = tf.nn.rnn_cell.DropoutWrapper(
           lstm_cell, output_keep_prob=config.keep_prob)
-    cell = rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers)
+    cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers)
 
     self._initial_state = cell.zero_state(batch_size, tf.float32)
 
@@ -128,9 +126,10 @@ class PTBModel(object):
     softmax_w = tf.get_variable("softmax_w", [size, vocab_size])
     softmax_b = tf.get_variable("softmax_b", [vocab_size])
     logits = tf.matmul(output, softmax_w) + softmax_b
-    loss = seq2seq.sequence_loss_by_example([logits],
-                                            [tf.reshape(self._targets, [-1])],
-                                            [tf.ones([batch_size * num_steps])])
+    loss = tf.nn.seq2seq.sequence_loss_by_example(
+        [logits],
+        [tf.reshape(self._targets, [-1])],
+        [tf.ones([batch_size * num_steps])])
     self._cost = cost = tf.reduce_sum(loss) / batch_size
     self._final_state = state
 
@@ -224,6 +223,22 @@ class LargeConfig(object):
   vocab_size = 10000
 
 
+class TestConfig(object):
+  """Tiny config, for testing."""
+  init_scale = 0.1
+  learning_rate = 1.0
+  max_grad_norm = 1
+  num_layers = 1
+  num_steps = 2
+  hidden_size = 2
+  max_epoch = 1
+  max_max_epoch = 1
+  keep_prob = 1.0
+  lr_decay = 0.5
+  batch_size = 20
+  vocab_size = 10000
+
+
 def run_epoch(session, m, data, eval_op, verbose=False):
   """Runs the model on the given data."""
   epoch_size = ((len(data) // m.batch_size) - 1) // m.num_steps
@@ -255,11 +270,13 @@ def get_config():
     return MediumConfig()
   elif FLAGS.model == "large":
     return LargeConfig()
+  elif FLAGS.model == "test":
+    return TestConfig()
   else:
     raise ValueError("Invalid model: %s", FLAGS.model)
 
 
-def main(unused_args):
+def main(_):
   if not FLAGS.data_path:
     raise ValueError("Must set --data_path to PTB data directory")
 

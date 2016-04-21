@@ -29,6 +29,20 @@ from tensorflow.python.ops import sparse_ops
 from tensorflow.python.platform import googletest
 
 
+# TODO(zongheng): it'd be great to factor out this function and various random
+# SparseTensor gen funcs.
+def _sparsify(x, thresh=0.5, index_dtype=np.int64):
+  x[x < thresh] = 0
+
+  non_zero = np.where(x)
+  x_indices = np.vstack(non_zero).astype(index_dtype).T
+  x_values = x[non_zero]
+  x_shape = x.shape
+
+  return ops.SparseTensor(
+      indices=x_indices, values=x_values, shape=x_shape), len(x_values)
+
+
 class SparseToIndicatorTest(test_util.TensorFlowTestCase):
 
   def _SparseTensor_5x6(self, dtype):
@@ -98,6 +112,79 @@ class SparseToIndicatorTest(test_util.TensorFlowTestCase):
         expected_output[expected_true] = True
 
       self.assertAllEqual(output, expected_output)
+
+
+class SparseMergeTest(test_util.TensorFlowTestCase):
+
+  def _SparseTensor_3x50(self, indices_dtype, values_dtype):
+    ind = np.array([
+        [0, 0],
+        [1, 0], [1, 1], [1, 2],
+        [2, 0], [2, 1]])
+    # NB: these are not sorted
+    indices = np.array([0, 13, 10, 14, 32, 33])
+    values = np.array([-3, 4, 1, 1, 5, 9])
+    shape = np.array([3, 3])
+    indices = ops.SparseTensor(
+        constant_op.constant(ind, dtypes.int64),
+        constant_op.constant(indices, indices_dtype),
+        constant_op.constant(shape, dtypes.int64))
+    values = ops.SparseTensor(
+        constant_op.constant(ind, dtypes.int64),
+        constant_op.constant(values, values_dtype),
+        constant_op.constant(shape, dtypes.int64))
+    return indices, values
+
+  def testInt32AndFloat32(self):
+    vocab_size = 50
+    with self.test_session(use_gpu=False) as sess:
+      indices, values = self._SparseTensor_3x50(dtypes.int32, dtypes.float32)
+      sp_output = sparse_ops.sparse_merge(indices, values, vocab_size)
+
+      output = sess.run(sp_output)
+      self.assertAllEqual(
+          output.indices,
+          [[0, 0], [1, 10], [1, 13], [1, 14], [2, 32], [2, 33]])
+      self.assertAllEqual(
+          output.values,
+          [-3, 1, 4, 1, 5, 9])
+      self.assertAllEqual(
+          output.shape,
+          [3, vocab_size])
+
+  def testInt64AndFloat32(self):
+    vocab_size = 50
+    with self.test_session(use_gpu=False) as sess:
+      indices, values = self._SparseTensor_3x50(dtypes.int64, dtypes.float32)
+      sp_output = sparse_ops.sparse_merge(indices, values, vocab_size)
+
+      output = sess.run(sp_output)
+      self.assertAllEqual(
+          output.indices,
+          [[0, 0], [1, 10], [1, 13], [1, 14], [2, 32], [2, 33]])
+      self.assertAllEqual(
+          output.values,
+          [-3, 1, 4, 1, 5, 9])
+      self.assertAllEqual(
+          output.shape,
+          [3, vocab_size])
+
+  def testInt64AndFloat64(self):
+    vocab_size = 50
+    with self.test_session(use_gpu=False) as sess:
+      indices, values = self._SparseTensor_3x50(dtypes.int64, dtypes.float64)
+      sp_output = sparse_ops.sparse_merge(indices, values, vocab_size)
+
+      output = sess.run(sp_output)
+      self.assertAllEqual(
+          output.indices,
+          [[0, 0], [1, 10], [1, 13], [1, 14], [2, 32], [2, 33]])
+      self.assertAllEqual(
+          output.values,
+          [-3, 1, 4, 1, 5, 9])
+      self.assertAllEqual(
+          output.shape,
+          [3, vocab_size])
 
 
 class SparseRetainTest(test_util.TensorFlowTestCase):
@@ -229,6 +316,60 @@ class SparseFillEmptyRowsTest(test_util.TensorFlowTestCase):
       self.assertAllEqual(output.values, [0, 10, 13, 14])
       self.assertAllEqual(output.shape, [2, 6])
       self.assertAllEqual(empty_row_indicator_out, np.zeros(2).astype(np.bool))
+
+
+class SparseReduceSumTest(test_util.TensorFlowTestCase):
+
+  def _compare(self, sp_t, reduction_axes, keep_dims):
+    densified = sparse_ops.sparse_tensor_to_dense(sp_t).eval()
+
+    np_ans = densified
+    if reduction_axes is None:
+      np_ans = np.sum(np_ans, keepdims=keep_dims)
+    else:
+      if isinstance(reduction_axes, list):
+        reduction_axes = sorted(reduction_axes)  # loop below depends on sorted
+      reduction_axes = np.array(reduction_axes).astype(np.int32)
+      for ra in reduction_axes.ravel()[::-1]:
+        np_ans = np.sum(np_ans, axis=ra, keepdims=keep_dims)
+
+    with self.test_session():
+      tf_ans = sparse_ops.sparse_reduce_sum(sp_t, reduction_axes, keep_dims)
+      out = tf_ans.eval()
+
+    self.assertAllClose(np_ans, out)
+
+  def _compare_all(self, sp_t, reduction_axes):
+    self._compare(sp_t, reduction_axes, False)
+    self._compare(sp_t, reduction_axes, True)
+
+  def testReduceSumForSparse(self):
+    # [[1, ?, 1]
+    #  [?, 1, ?]]
+    # where ? is implictly-zero.
+    ind = np.array([[0, 0], [0, 2], [1, 1]]).astype(np.int64)
+    vals = np.array([1, 1, 1]).astype(np.int32)
+    shape = np.array([2, 3]).astype(np.int64)
+    sp_t = ops.SparseTensor(ind, vals, shape)
+
+    with self.test_session(use_gpu=False):
+      self._compare_all(sp_t, None)
+      self._compare_all(sp_t, 0)
+      self._compare_all(sp_t, [1])
+      self._compare_all(sp_t, [0, 1])
+      self._compare_all(sp_t, [1, 0])
+
+    np.random.seed(1618)
+    test_dims = [(1618, 1, 11, 7, 1), (1,), (1, 1, 1)]
+    with self.test_session(use_gpu=False):
+      for dims in test_dims:
+        sp_t, unused_nnz = _sparsify(np.random.randn(*dims))
+        # reduce all using None
+        self._compare_all(sp_t, None)
+        # reduce random axes from 1D to N-D
+        for d in range(1, len(dims) + 1):
+          axes = np.random.choice(len(dims), size=d, replace=False).tolist()
+          self._compare_all(sp_t, axes)
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@
 #include "google/protobuf/io/zero_copy_stream_impl_lite.h"
 #include "google/protobuf/message_lite.h"
 #include "tensorflow/core/platform/logging.h"
+#include "tensorflow/examples/android/jni/limiting_file_input_stream.h"
 
 static const char* const ASSET_PREFIX = "file:///android_asset/";
 

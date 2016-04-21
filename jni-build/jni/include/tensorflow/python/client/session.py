@@ -20,15 +20,14 @@ from __future__ import division
 from __future__ import print_function
 
 import re
-import sys
 import threading
 
 import numpy as np
-import six
 
 from tensorflow.python import pywrap_tensorflow as tf_session
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
+from tensorflow.python.ops import session_ops
 from tensorflow.python.platform import logging
 from tensorflow.python.util import compat
 
@@ -46,7 +45,7 @@ class SessionInterface(object):
     """The TensorFlow process to which this session will connect."""
     raise NotImplementedError('sess_str')
 
-  def run(self, fetches, feed_dict=None):
+  def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
     """Runs operations in the session. See `Session.run()` for details."""
     raise NotImplementedError('run')
 
@@ -100,6 +99,9 @@ class BaseSession(SessionInterface):
     self._current_version = 0
     self._extend_lock = threading.Lock()
     self._target = target
+
+    self._delete_lock = threading.Lock()
+    self._dead_handles = []
 
     self._session = None
 
@@ -256,7 +258,7 @@ class BaseSession(SessionInterface):
        lambda feed: [feed])]
   # pylint: enable=g-long-lambda
 
-  def run(self, fetches, feed_dict=None):
+  def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
     """Runs the operations and evaluates the tensors in `fetches`.
 
     This method runs one "step" of TensorFlow computation, by
@@ -279,6 +281,9 @@ class BaseSession(SessionInterface):
       the *i*th return value will be a
       [`SparseTensorValue`](../../api_docs/python/sparse_ops.md#SparseTensorValue)
       containing the value of that sparse tensor.
+    * If the *i*th element of `fetches` is produced by a `get_tensor_handle` op,
+      the *i*th return value will be a numpy ndarray containing the handle of
+      that tensor.
 
     The optional `feed_dict` argument allows the caller to override
     the value of tensors in the graph. Each key in `feed_dict` can be
@@ -295,11 +300,22 @@ class BaseSession(SessionInterface):
       the value should be a
       [`SparseTensorValue`](../../api_docs/python/sparse_ops.md#SparseTensorValue).
 
+    The optional `options` argument expects a [`RunOptions`] proto. The options
+    allow controlling the behavior of this particular step (e.g. turning tracing
+    on).
+
+    The optional `run_metadata` argument expects a [`RunMetadata`] proto. When
+    appropriate, the non-Tensor output of this step will be collected there. For
+    example, when users turn on tracing in `options`, the profiled info will be
+    collected into this argument and passed back.
+
     Args:
       fetches: A single graph element, or a list of graph elements
         (described above).
       feed_dict: A dictionary that maps graph elements to values
         (described above).
+      options: A [`RunOptions`] protocol buffer
+      run_metadata: A [`RunMetadata`] protocol buffer
 
     Returns:
       Either a single value if `fetches` is a single graph element, or
@@ -312,7 +328,24 @@ class BaseSession(SessionInterface):
       ValueError: If `fetches` or `feed_dict` keys are invalid or refer to a
         `Tensor` that doesn't exist.
     """
-    return self._run(None, fetches, feed_dict)
+    run_metadata_ptr = tf_session.TF_NewBuffer()
+    if options:
+      options_ptr = tf_session.TF_NewBufferFromString(
+          compat.as_bytes(options.SerializeToString()))
+    else:
+      options_ptr = None
+
+    try:
+      result = self._run(None, fetches, feed_dict, options_ptr,
+                         run_metadata_ptr)
+      if run_metadata:
+        proto_data = tf_session.TF_GetBuffer(run_metadata_ptr)
+        run_metadata.ParseFromString(compat.as_bytes(proto_data))
+    finally:
+      tf_session.TF_DeleteBuffer(run_metadata_ptr)
+      if options:
+        tf_session.TF_DeleteBuffer(options_ptr)
+    return result
 
   def partial_run(self, handle, fetches, feed_dict=None):
     """Continues the execution with more feeds and fetches.
@@ -324,17 +357,22 @@ class BaseSession(SessionInterface):
     list of feeds and fetches that will be used in the subsequent
     `partial_run` calls.
 
+    The optional `feed_dict` argument allows the caller to override
+    the value of tensors in the graph. See run() for more information.
+
     Below is a simple example:
 
-      a = array_ops.placeholder(dtypes.float32, shape=[])
-      b = array_ops.placeholder(dtypes.float32, shape=[])
-      c = array_ops.placeholder(dtypes.float32, shape=[])
-      r1 = math_ops.add(a, b)
-      r2 = math_ops.mul(r1, c)
+    ```python
+    a = array_ops.placeholder(dtypes.float32, shape=[])
+    b = array_ops.placeholder(dtypes.float32, shape=[])
+    c = array_ops.placeholder(dtypes.float32, shape=[])
+    r1 = math_ops.add(a, b)
+    r2 = math_ops.mul(r1, c)
 
-      h = sess.partial_run_setup([r1, r2], [a, b, c])
-      res = sess.partial_run(h, r1, feed_dict={a: 1, b: 2})
-      res = sess.partial_run(h, r2, feed_dict={c: res})
+    h = sess.partial_run_setup([r1, r2], [a, b, c])
+    res = sess.partial_run(h, r1, feed_dict={a: 1, b: 2})
+    res = sess.partial_run(h, r2, feed_dict={c: res})
+    ```
 
     Args:
       handle: A handle for a sequence of partial runs.
@@ -347,7 +385,7 @@ class BaseSession(SessionInterface):
       Either a single value if `fetches` is a single graph element, or
       a list of values if `fetches` is a list (described above).
     """
-    return self._run(handle, fetches, feed_dict)
+    return self._run(handle, fetches, feed_dict, None, None)
 
   def partial_run_setup(self, fetches, feeds=None):
     """Sets up a graph with feeds and fetches for partial run.
@@ -384,7 +422,7 @@ class BaseSession(SessionInterface):
                          'graph before calling run().')
 
     # Validate and process fetches.
-    unique_fetches, target_list, _ = self._process_fetches(fetches)
+    unique_fetches, target_list, _, _ = self._process_fetches(fetches)
 
     # Create request.
     feed_list = []
@@ -429,6 +467,7 @@ class BaseSession(SessionInterface):
       fetches = [fetches]
 
     unique_fetch_targets = set()
+    unique_fetch_handles = {}
     target_list = []
 
     fetch_info = []
@@ -439,10 +478,15 @@ class BaseSession(SessionInterface):
         try:
           fetch_t = self.graph.as_graph_element(subfetch, allow_tensor=True,
                                                 allow_operation=True)
+          fetch_name = compat.as_bytes(fetch_t.name)
           if isinstance(fetch_t, ops.Operation):
-            target_list.append(compat.as_bytes(fetch_t.name))
+            target_list.append(fetch_name)
           else:
-            subfetch_names.append(compat.as_bytes(fetch_t.name))
+            subfetch_names.append(fetch_name)
+          # Remember the fetch if it is for a tensor handle.
+          if (isinstance(fetch_t, ops.Tensor) and
+              fetch_t.op.type == 'GetSessionHandle'):
+            unique_fetch_handles[fetch_name] = fetch_t.op.inputs[0].dtype
         except TypeError as e:
           raise TypeError('Fetch argument %r of %r has invalid type %r, '
                           'must be a string or Tensor. (%s)'
@@ -457,9 +501,9 @@ class BaseSession(SessionInterface):
       fetch_info.append((subfetch_names, fetch_contraction_fn))
 
     unique_fetch_targets = list(unique_fetch_targets)
-    return unique_fetch_targets, target_list, fetch_info
+    return unique_fetch_targets, target_list, fetch_info, unique_fetch_handles
 
-  def _run(self, handle, fetches, feed_dict):
+  def _run(self, handle, fetches, feed_dict, options, run_metadata):
     """Perform either run or partial_run, depending the exitence of `handle`."""
     def _feed_fn(feed, feed_val):
       for tensor_type, _, feed_fn, _ in BaseSession._REGISTERED_EXPANSIONS:
@@ -476,10 +520,15 @@ class BaseSession(SessionInterface):
                          'graph before calling run().')
 
     # Validate and process fetches.
-    unique_fetches, target_list, fetch_info = self._process_fetches(fetches)
+    processed_fetches = self._process_fetches(fetches)
+    unique_fetches = processed_fetches[0]
+    target_list = processed_fetches[1]
+    fetch_info = processed_fetches[2]
+    unique_handles = processed_fetches[3]
 
     # Create request.
     feed_dict_string = {}
+    feed_map = {}
 
     # Validate and process feed_dict.
     if feed_dict:
@@ -496,25 +545,39 @@ class BaseSession(SessionInterface):
             raise TypeError('The value of a feed cannot be a tf.Tensor object. '
                             'Acceptable feed values include Python scalars, '
                             'strings, lists, or numpy ndarrays.')
-
           np_val = np.array(subfeed_val, dtype=subfeed_t.dtype.as_numpy_dtype)
-          if subfeed_t.op.type == 'Placeholder':
-            if not subfeed_t.get_shape().is_compatible_with(np_val.shape):
-              raise ValueError(
-                  'Cannot feed value of shape %r for Tensor %r, '
-                  'which has shape %r'
-                  % (np_val.shape, subfeed_t.name, str(subfeed_t.get_shape())))
-          feed_dict_string[compat.as_bytes(subfeed_t.name)] = np_val
+          if not subfeed_t.get_shape().is_compatible_with(np_val.shape):
+            raise ValueError(
+                'Cannot feed value of shape %r for Tensor %r, '
+                'which has shape %r'
+                % (np_val.shape, subfeed_t.name, str(subfeed_t.get_shape())))
+          if not self.graph.is_feedable(subfeed_t):
+            raise ValueError('Tensor %s may not be fed.' % subfeed_t)
+          subfeed_name = compat.as_bytes(subfeed_t.name)
+          feed_dict_string[subfeed_name] = np_val
+          feed_map[subfeed_name] = (subfeed_t, subfeed_val)
 
     # Run request and get response.
-    results = self._do_run(handle, target_list, unique_fetches,
-                           feed_dict_string)
+    movers = self._update_with_movers(feed_dict_string, feed_map)
+    try:
+      results = self._do_run(handle, target_list, unique_fetches,
+                             feed_dict_string, options, run_metadata)
+    finally:
+      # The movers are no longer used. Delete them.
+      for handle in movers:
+        self._register_dead_handle(handle)
 
     # User may have fetched the same tensor multiple times, but we
     # only fetch them from the runtime once.  Furthermore, they may
     # be wrapped as a tuple of tensors.  Here we map the results back
     # to what the client asked for.
-    fetched_results = dict(zip(unique_fetches, results))
+    # TODO(yuanbyu): Use the contraction_fn in _REGISTERED_EXPANSIONS.
+    fetched_results = {}
+    for fetch, result in zip(unique_fetches, results):
+      dtype = unique_handles.get(fetch)
+      if dtype:
+        result = session_ops.TensorHandle(result, dtype, self)
+      fetched_results[fetch] = result
     ret = []
     for fetch_names, fetch_contraction_fn in fetch_info:
       if fetch_names:
@@ -531,7 +594,8 @@ class BaseSession(SessionInterface):
   # Captures the name of a node in an error status.
   _NODEDEF_NAME_RE = re.compile(r'\[\[Node: ([^ ]*?) =')
 
-  def _do_run(self, handle, target_list, fetch_list, feed_dict):
+  def _do_run(self, handle, target_list, fetch_list, feed_dict,
+              options, run_metadata):
     """Runs a step based on the given fetches and feeds.
 
     Args:
@@ -542,6 +606,8 @@ class BaseSession(SessionInterface):
         be fetched and operations to be run.
       feed_dict: A dictionary that maps tensor names (as byte arrays) to
         numpy ndarrays.
+      options: A (pointer to a) [`RunOptions`] protocol buffer, or None
+      run_metadata: A (pointer to a) [`RunMetadata`] protocol buffer, or None
 
     Returns:
       A list of numpy ndarrays, corresponding to the elements of
@@ -549,10 +615,17 @@ class BaseSession(SessionInterface):
       name of an operation, the first Tensor output of that operation
       will be returned for that element.
     """
-    def _run_fn(session, feed_dict, fetch_list, target_list):
+    def _run_fn(session, feed_dict, fetch_list, target_list, options,
+                run_metadata):
       # Ensure any changes to the graph are reflected in the runtime.
       self._extend_graph()
-      return tf_session.TF_Run(session, feed_dict, fetch_list, target_list)
+      if options:
+        return tf_session.TF_Run(session, options,
+                                 feed_dict, fetch_list, target_list,
+                                 run_metadata)
+      else:
+        return tf_session.TF_Run(
+            session, None, feed_dict, fetch_list, target_list, None)
 
     def _prun_fn(session, handle, feed_dict, fetch_list):
       if target_list:
@@ -561,7 +634,7 @@ class BaseSession(SessionInterface):
 
     if handle is None:
       return self._do_call(_run_fn, self._session, feed_dict, fetch_list,
-                           target_list)
+                           target_list, options, run_metadata)
     else:
       return self._do_call(_prun_fn, self._session, handle, feed_dict,
                            fetch_list)
@@ -570,22 +643,21 @@ class BaseSession(SessionInterface):
     try:
       return fn(*args)
     except tf_session.StatusNotOK as e:
-      e_type, e_value, e_traceback = sys.exc_info()
       error_message = compat.as_text(e.error_message)
       m = BaseSession._NODEDEF_NAME_RE.search(error_message)
+      node_def = None
+      op = None
       if m is not None:
         node_name = m.group(1)
-        node_def = None
         try:
           op = self._graph.get_operation_by_name(node_name)
           node_def = op.node_def
         except KeyError:
-          op = None
-        # pylint: disable=protected-access
-        raise errors._make_specific_exception(node_def, op, error_message,
-                                              e.code)
-        # pylint: enable=protected-access
-      six.reraise(e_type, e_value, e_traceback)
+          pass
+      # pylint: disable=protected-access
+      raise errors._make_specific_exception(node_def, op, error_message,
+                                            e.code)
+      # pylint: enable=protected-access
 
   def _extend_graph(self):
     # Ensure any changes to the graph are reflected in the runtime.
@@ -605,6 +677,55 @@ class BaseSession(SessionInterface):
           tf_session.TF_DeleteStatus(status)
 
         self._current_version = self._graph.version
+
+  # The threshold to run garbage collection to delete dead tensors.
+  _DEAD_HANDLES_THRESHOLD = 10
+
+  def _register_dead_handle(self, handle):
+    # Register a dead handle in the session. Delete the dead tensors when
+    # the number of dead tensors exceeds certain threshold.
+    tensors_to_delete = None
+    with self._delete_lock:
+      self._dead_handles.append(handle)
+      if len(self._dead_handles) == BaseSession._DEAD_HANDLES_THRESHOLD:
+        tensors_to_delete = self._dead_handles
+        self._dead_handles = []
+    # Delete the dead tensors.
+    # TODO(yuanbyu): For now we use a sequence of runs to minimize the graph
+    # size and the overhead of graph construction/partitioning.
+    if tensors_to_delete:
+      for tensor_handle in tensors_to_delete:
+        feeds = {}
+        fetches = []
+        holder, deleter = session_ops._get_handle_deleter(self.graph,
+                                                          tensor_handle)
+        feeds[holder] = tensor_handle
+        fetches.append(deleter)
+        self.run(fetches, feed_dict=feeds)
+
+  def _update_with_movers(self, feed_dict, feed_map):
+    # If a tensor handle that is fed to a device incompatible placeholder,
+    # we move the tensor to the right device, generate a new tensor handle,
+    # and update `feed_dict` to use the new handle.
+    handle_movers = []
+    for feed_name, val in feed_map.items():
+      mover = session_ops._get_handle_mover(self.graph, *val)
+      if mover:
+        handle_movers.append((feed_name, val[1], mover))
+    # Transfer a tensor to the right device if needed.
+    if not handle_movers:
+      return []
+    else:
+      feeds = {}
+      fetches = []
+      for _, handle, mover in handle_movers:
+        feeds[mover[0]] = handle
+        fetches.append(mover[1])
+      handles = self.run(fetches, feed_dict=feeds)
+      for handle_mover, handle in zip(handle_movers, handles):
+        np_val = np.array(handle.handle, dtype=np.object)
+        feed_dict[handle_mover[0]] = np_val
+      return handles
 
 
 class Session(BaseSession):
@@ -647,7 +768,7 @@ class Session(BaseSession):
   ```
 
   The [`ConfigProto`]
-  (https://www.tensorflow.org/code/tensorflow/core/framework/config.proto)
+  (https://www.tensorflow.org/code/tensorflow/core/protobuf/config.proto)
   protocol buffer exposes various configuration options for a
   session. For example, to create a session that uses soft constraints
   for device placement, and log the resulting placement decisions,
@@ -686,7 +807,7 @@ class Session(BaseSession):
         Defaults to using an in-process engine. At present, no value
         other than the empty string is supported.
       graph: (Optional.) The `Graph` to be launched (described above).
-      config: (Optional.) A [`ConfigProto`](https://www.tensorflow.org/code/tensorflow/core/framework/config.proto)
+      config: (Optional.) A [`ConfigProto`](https://www.tensorflow.org/code/tensorflow/core/protobuf/config.proto)
         protocol buffer with configuration options for the session.
 
     """

@@ -15,7 +15,7 @@ A step-by-step walk through of the details of using TensorFlow infrastructure
 to train models at scale, using MNIST handwritten digit recognition as a toy
 example.
 
-[View Tutorial](mnist/tf/index.md)
+[View Tutorial](../tutorials/mnist/tf/index.md)
 
 
 ## TensorBoard: Visualizing Learning
@@ -42,6 +42,13 @@ This tutorial describes the three main methods of getting data into your
 TensorFlow program: Feeding, Reading and Preloading.
 
 [View Tutorial](reading_data/index.md)
+
+## Distributed TensorFlow
+
+This tutorial describes how to execute TensorFlow programs using a cluster of
+TensorFlow servers.
+
+[View Tutorial](distributed/index.md)
 
 
 ## Threading and Queues
@@ -100,4 +107,14 @@ If you're developing a tool to load, analyze, or manipulate TensorFlow model
 files, it's useful to understand a bit about the format in which they're stored.
 This guide covers the details of the saved model format.
 
-[View Tutorial](tool_developers/index.md)
+[View Tutorial](../how_tos/tool_developers/index.md)
+
+## How to Retrain Inception using Transfer Learning
+
+Training a full object recognition model like Inception takes a long time and a
+lot of images. This example shows how to use the technique of transfer learning
+to retrain just the final layer of a fully-trained model to recognize new
+categories of objects, which is a lot faster and easier than completely
+retraining a new model.
+
+[View Tutorial](../how_tos/image_retraining/index.md)

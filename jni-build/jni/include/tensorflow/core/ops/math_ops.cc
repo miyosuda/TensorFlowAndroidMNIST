@@ -101,7 +101,7 @@ _HostCast requires its input and produces its output in host memory.
 REGISTER_OP("Abs")
     .Input("x: T")
     .Output("y: T")
-    .Attr("T: {float, double, int32, int64}")
+    .Attr("T: {half, float, double, int32, int64}")
     .Doc(R"doc(
 Computes the absolute value of a tensor.
 
@@ -132,7 +132,7 @@ tf.complex_abs(x) ==> [5.25594902, 6.60492229]
 // Declares cwise unary operations signature: 't -> 't
 #define UNARY()                      \
   Input("x: T").Output("y: T").Attr( \
-      "T: {float, double, int32, complex64, int64}")
+      "T: {half, float, double, int32, complex64, int64}")
 
 REGISTER_OP("Neg")
     .UNARY()
@@ -191,7 +191,14 @@ Computes hyperbolic tangent of `x` element-wise.
 REGISTER_OP("Lgamma")
     .UNARY()
     .Doc(R"doc(
-Computes the log of the absolute value of Gamma of `x` element-wise.
+Computes the log of the absolute value of `Gamma(x)` element-wise.
+)doc");
+
+REGISTER_OP("Digamma")
+    .UNARY()
+    .Doc(R"doc(
+Computes Psi, the derivative of Lgamma (the log of the absolute value of
+`Gamma(x)`), element-wise.
 )doc");
 
 REGISTER_OP("Erf")
@@ -231,7 +238,7 @@ Computes cos of x element-wise.
 REGISTER_OP("IsNan")
     .Input("x: T")
     .Output("y: bool")
-    .Attr("T: {float, double}")
+    .Attr("T: {half, float, double}")
     .Doc(R"doc(
 Returns which elements of x are NaN.
 )doc");
@@ -239,7 +246,7 @@ Returns which elements of x are NaN.
 REGISTER_OP("IsInf")
     .Input("x: T")
     .Output("y: bool")
-    .Attr("T: {float, double}")
+    .Attr("T: {half, float, double}")
     .Doc(R"doc(
 Returns which elements of x are Inf.
 )doc");
@@ -247,7 +254,7 @@ Returns which elements of x are Inf.
 REGISTER_OP("IsFinite")
     .Input("x: T")
     .Output("y: bool")
-    .Attr("T: {float, double}")
+    .Attr("T: {half, float, double}")
     .Doc(R"doc(
 Returns which elements of x are finite.
 )doc");
@@ -255,17 +262,19 @@ Returns which elements of x are finite.
 REGISTER_OP("Sign")
     .Input("x: T")
     .Output("y: T")
-    .Attr("T: {float, double, int32, int64}")
+    .Attr("T: {half, float, double, int32, int64, complex64}")
     .Doc(R"doc(
 Returns an element-wise indication of the sign of a number.
 
-y = sign(x) = -1 if x < 0; 0 if x == 0; 1 if x > 0.
+`y = sign(x) = -1` if `x < 0`; 0 if `x == 0`; 1 if `x > 0`.
+
+For complex numbers, `y = sign(x) = x / |x|` if `x != 0`, otherwise `y = 0`.
 )doc");
 
 REGISTER_OP("Floor")
     .Input("x: T")
     .Output("y: T")
-    .Attr("T: {float, double}")
+    .Attr("T: {half, float, double}")
     .Doc(R"doc(
 Returns element-wise largest integer not greater than x.
 )doc");
@@ -273,7 +282,7 @@ Returns element-wise largest integer not greater than x.
 REGISTER_OP("Ceil")
     .Input("x: T")
     .Output("y: T")
-    .Attr("T: {float, double}")
+    .Attr("T: {half, float, double}")
     .Doc(R"doc(
 Returns element-wise smallest integer in not less than x.
 )doc");
@@ -282,11 +291,11 @@ Returns element-wise smallest integer in not less than x.
 
 #define BINARY_MORE()                              \
   Input("x: T").Input("y: T").Output("z: T").Attr( \
-      "T: {float, double, uint8, int8, int16, int32, int64, complex64}")
+      "T: {half, float, double, uint8, int8, int16, int32, int64, complex64}")
 
 #define BINARY_FEWER()                             \
   Input("x: T").Input("y: T").Output("z: T").Attr( \
-      "T: {float, double, int32, complex64, int64}")
+      "T: {half, float, double, int32, complex64, int64}")
 
 // TODO(mrry): Restore `SetIsCommutative()` for non-string types.
 REGISTER_OP("Add")
@@ -294,7 +303,7 @@ REGISTER_OP("Add")
     .Input("y: T")
     .Output("z: T")
     .Attr(
-        "T: {float, double, uint8, int8, int16, int32, int64, complex64, "
+        "T: {half, float, double, uint8, int8, int16, int32, int64, complex64, "
         "string}")
     .Doc(R"doc(
 Returns x + y element-wise.
@@ -321,6 +330,13 @@ REGISTER_OP("Div")
 Returns x / y element-wise.
 )doc");
 
+REGISTER_OP("SquaredDifference")
+    .BINARY_FEWER()
+    .SetIsCommutative()
+    .Doc(R"doc(
+Returns (x - y)(x - y) element-wise.
+)doc");
+
 #undef BINARY_FEWER
 #undef BINARY_MORE
 
@@ -328,7 +344,7 @@ REGISTER_OP("Maximum")
     .Input("x: T")
     .Input("y: T")
     .Output("z: T")
-    .Attr("T: {float, double, int32, int64}")
+    .Attr("T: {half, float, double, int32, int64}")
     .SetIsCommutative()
     .Doc(R"doc(
 Returns the max of x and y (i.e. x > y ? x : y) element-wise, broadcasts.
@@ -338,7 +354,7 @@ REGISTER_OP("Minimum")
     .Input("x: T")
     .Input("y: T")
     .Output("z: T")
-    .Attr("T: {float, double, int32, int64}")
+    .Attr("T: {half, float, double, int32, int64}")
     .SetIsCommutative()
     .Doc(R"doc(
 Returns the min of x and y (i.e. x < y ? x : y) element-wise, broadcasts.
@@ -357,7 +373,7 @@ REGISTER_OP("Pow")
     .Input("x: T")
     .Input("y: T")
     .Output("z: T")
-    .Attr("T: {float, double, int32, complex64, int64}")
+    .Attr("T: {half, float, double, int32, complex64, int64}")
     .Doc(R"doc(
 Computes the power of one value to another.
 
@@ -369,6 +385,52 @@ corresponding elements in `x` and `y`. For example:
 # tensor 'y' is [[8, 16], [2, 3]]
 tf.pow(x, y) ==> [[256, 65536], [9, 27]]
 ```
+)doc");
+
+REGISTER_OP("Igammac")
+    .Input("a: T")
+    .Input("x: T")
+    .Output("z: T")
+    .Attr("T: {float, double}")
+    .Doc(R"doc(
+Compute the upper regularized incomplete Gamma function `Q(a, x)`.
+
+The upper regularized incomplete Gamma function is defined as:
+
+```
+Q(a, x) = Gamma(a, x) / Gamma(x) = 1 - P(a, x)
+```
+where
+```
+Gamma(a, x) = int_{x}^{\infty} t^{a-1} exp(-t) dt
+```
+is the upper incomplete Gama function.
+
+Note, above `P(a, x)` (`Igamma`) is the lower regularized complete
+Gamma function.
+)doc");
+
+REGISTER_OP("Igamma")
+    .Input("a: T")
+    .Input("x: T")
+    .Output("z: T")
+    .Attr("T: {float, double}")
+    .Doc(R"doc(
+Compute the lower regularized incomplete Gamma function `Q(a, x)`.
+
+The lower regularized incomplete Gamma function is defined as:
+
+```
+P(a, x) = gamma(a, x) / Gamma(x) = 1 - Q(a, x)
+```
+where
+```
+gamma(a, x) = int_{0}^{x} t^{a-1} exp(-t) dt
+```
+is the lower incomplete Gamma function.
+
+Note, above `Q(a, x)` (`Igammac`) is the upper regularized complete
+Gamma function.
 )doc");
 
 // --------------------------------------------------------------------------
@@ -406,24 +468,24 @@ Returns the truth value of (x >= y) element-wise.
 
 // --------------------------------------------------------------------------
 
-#define COMPARISON()                                                     \
-  Input("x: T").Input("y: T").Output("z: bool").SetIsCommutative().Attr( \
-      "T: {float, double, uint8, int8, int16, int32, int64, complex64, " \
+#define EQUALITY_COMPARISON()                                                  \
+  Input("x: T").Input("y: T").Output("z: bool").SetIsCommutative().Attr(       \
+      "T: {half, float, double, uint8, int8, int16, int32, int64, complex64, " \
       "quint8, qint8, qint32, string}")
 
 REGISTER_OP("Equal")
-    .COMPARISON()
+    .EQUALITY_COMPARISON()
     .Doc(R"doc(
 Returns the truth value of (x == y) element-wise.
 )doc");
 
 REGISTER_OP("NotEqual")
-    .COMPARISON()
+    .EQUALITY_COMPARISON()
     .Doc(R"doc(
 Returns the truth value of (x != y) element-wise.
 )doc");
 
-#undef COMPARISON
+#undef EQUALITY_COMPARISON
 
 // --------------------------------------------------------------------------
 
@@ -1158,6 +1220,26 @@ tf.conj(in) ==> [-2.25 - 4.75j, 3.25 - 5.75j]
 ```
 )doc");
 
+REGISTER_OP("FFT")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the 1-dimensional discrete Fourier Transform.
+
+in: A complex64 vector.
+out: The 1D Fourier Transform of `in`.
+)doc");
+
+REGISTER_OP("IFFT")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the inverse 1-dimensional discrete Fourier Transform.
+
+in: A complex64 vector.
+out: The inverse 1D Fourier Transform of `in`.
+)doc");
+
 REGISTER_OP("FFT2D")
     .Input("in: complex64")
     .Output("out: complex64")
@@ -1166,7 +1248,6 @@ Compute the 2-dimensional discrete Fourier Transform.
 
 in: A complex64 matrix.
 out: The 2D Fourier Transform of `in`.
-
 )doc");
 
 REGISTER_OP("IFFT2D")
@@ -1177,7 +1258,98 @@ Compute the inverse 2-dimensional discrete Fourier Transform.
 
 in: A complex64 matrix.
 out: The inverse 2D Fourier Transform of `in`.
+)doc");
 
+REGISTER_OP("FFT3D")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the 3-dimensional discrete Fourier Transform.
+
+in: A complex64 3-D tensor.
+out: The 3D Fourier Transform of `in`.
+)doc");
+
+REGISTER_OP("IFFT3D")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the inverse 3-dimensional discrete Fourier Transform.
+
+in: A complex64 3-D tensor.
+out: The inverse 3D Fourier Transform of `in`.
+)doc");
+
+REGISTER_OP("BatchFFT")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the 1-dimensional discrete Fourier Transform over the inner-most
+dimension of `in`.
+
+in: A complex64 tensor.
+out: A complex64 tensor of the same shape as `in`. The inner-most dimension of
+  `in` is replaced with its 1D Fourier Transform.
+)doc");
+
+REGISTER_OP("BatchIFFT")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the inverse 1-dimensional discrete Fourier Transform over the inner-most
+dimension of `in`.
+
+in: A complex64 tensor.
+out: A complex64 tensor of the same shape as `in`. The inner-most dimension of
+  `in` is replaced with its inverse 1D Fourier Transform.
+)doc");
+
+REGISTER_OP("BatchFFT2D")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the 2-dimensional discrete Fourier Transform over the inner-most
+2 dimensions of `in`.
+
+in: A complex64 tensor.
+out: A complex64 tensor of the same shape as `in`. The inner-most 2 dimensions
+  of `in` are replaced with their 2D Fourier Transform.
+)doc");
+
+REGISTER_OP("BatchIFFT2D")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the inverse 2-dimensional discrete Fourier Transform over the inner-most
+2 dimensions of `in`.
+
+in: A complex64 tensor.
+out: A complex64 tensor of the same shape as `in`. The inner-most 2 dimensions
+  of `in` are replaced with their inverse 2D Fourier Transform.
+)doc");
+
+REGISTER_OP("BatchFFT3D")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the 3-dimensional discrete Fourier Transform over the inner-most 3
+dimensions of `in`.
+
+in: A complex64 tensor.
+out: A complex64 tensor of the same shape as `in`. The inner-most 3 dimensions
+  of `in` are replaced with their 3D Fourier Transform.
+)doc");
+
+REGISTER_OP("BatchIFFT3D")
+    .Input("in: complex64")
+    .Output("out: complex64")
+    .Doc(R"doc(
+Compute the inverse 3-dimensional discrete Fourier Transform over the inner-most
+3 dimensions of `in`.
+
+in: A complex64 tensor.
+out: A complex64 tensor of the same shape as `in`. The inner-most 3 dimensions
+  of `in` are replaced with their inverse 3D Fourier Transform.
 )doc");
 
 // --------------------------------------------------------------------------

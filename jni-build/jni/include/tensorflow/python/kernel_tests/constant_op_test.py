@@ -155,7 +155,7 @@ class ConstantTest(tf.test.TestCase):
       large_array = np.zeros((512, 1024, 1024), dtype=np.float32)
       with self.assertRaisesRegexp(
           ValueError,
-          "Cannot create an Operation with a NodeDef larger than 2GB."):
+          "Cannot create a tensor proto whose content is larger than 2GB."):
         c = tf.constant(large_array)
 
   def testTooLargeGraph(self):
@@ -262,6 +262,13 @@ class ZerosTest(tf.test.TestCase):
     self.assertTrue(np.array_equal(self._Zeros([2, 3]), np.array([[0] * 3] *
                                                                  2)))
 
+  def testScalar(self):
+    self.assertEqual(0, self._Zeros([]))
+    self.assertEqual(0, self._Zeros(()))
+    with self.test_session():
+      scalar = tf.zeros(tf.constant([], dtype=tf.int32))
+      self.assertEqual(0, scalar.eval())
+
   def testDynamicSizes(self):
     np_ans = np.array([[0] * 3] * 2)
     with self.test_session():
@@ -328,6 +335,19 @@ class ZerosLikeTest(tf.test.TestCase):
     z = tf.zeros_like(d)
     self.assertEqual(d.get_shape().as_list(), z.get_shape().as_list())
 
+  def testZerosLikeDtype(self):
+    # Make sure zeros_like works even for dtypes that cannot be cast between
+    with self.test_session():
+      shape = (3, 5)
+      dtypes = np.float32, np.complex64
+      for in_type in dtypes:
+        x = np.arange(15).astype(in_type).reshape(*shape)
+        for out_type in dtypes:
+          y = tf.zeros_like(x, dtype=out_type).eval()
+          self.assertEqual(y.dtype, out_type)
+          self.assertEqual(y.shape, shape)
+          self.assertAllEqual(y, np.zeros(shape, dtype=out_type))
+
 
 class OnesTest(tf.test.TestCase):
 
@@ -339,6 +359,13 @@ class OnesTest(tf.test.TestCase):
 
   def testConst(self):
     self.assertTrue(np.array_equal(self._Ones([2, 3]), np.array([[1] * 3] * 2)))
+
+  def testScalar(self):
+    self.assertEqual(1, self._Ones([]))
+    self.assertEqual(1, self._Ones(()))
+    with self.test_session():
+      scalar = tf.ones(tf.constant([], dtype=tf.int32))
+      self.assertEqual(1, scalar.eval())
 
   def testDynamicSizes(self):
     np_ans = np.array([[1] * 3] * 2)
@@ -546,6 +573,40 @@ class PlaceholderTest(tf.test.TestCase):
     self.assertEqual(
         "<tf.Tensor 'c:0' shape=(32, ?, 2) dtype=qint32>",
         repr(c))
+
+
+class PlaceholderWithDefaultTest(tf.test.TestCase):
+
+  def testFullShape(self):
+    with self.test_session():
+      p = tf.placeholder_with_default([[2, 2], [2, 2]], shape=[2, 2])
+      a = tf.identity(p)
+      self.assertAllEqual([[2, 2], [2, 2]], a.eval())
+      self.assertAllEqual([[3, 3], [3, 3]],
+                          a.eval(feed_dict={p: [[3, 3], [3, 3]]}))
+
+      with self.assertRaises(ValueError):
+        a.eval(feed_dict={p: [[6, 6, 6], [6, 6, 6]]})
+
+  def testPartialShape(self):
+    with self.test_session():
+      p = tf.placeholder_with_default([1, 2, 3], shape=[None])
+      a = tf.identity(p)
+      self.assertAllEqual([1, 2, 3], a.eval())
+      self.assertAllEqual([3, 37], a.eval(feed_dict={p: [3, 37]}))
+
+      with self.assertRaises(ValueError):
+        a.eval(feed_dict={p: [[2, 2], [2, 2]]})
+
+  def testNoShape(self):
+    with self.test_session():
+      p = tf.placeholder_with_default([17], shape=None)
+      a = tf.identity(p)
+      self.assertAllEqual([17], a.eval())
+      self.assertAllEqual([3, 37], a.eval(feed_dict={p: [3, 37]}))
+      self.assertAllEqual([[3, 3], [3, 3]],
+                          a.eval(feed_dict={p: [[3, 3], [3, 3]]}))
+
 
 if __name__ == "__main__":
   tf.test.main()

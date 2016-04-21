@@ -230,6 +230,16 @@ class TensorUtilTest(tf.test.TestCase):
     self.assertEquals(np.int64, a.dtype)
     self.assertAllClose(np.array([10, 20, 30], dtype=np.int64), a)
 
+  def testQuantizedTypes(self):
+    for dtype in [tf.qint32, tf.quint8, tf.qint8]:
+      # Test with array.
+      t = tensor_util.make_tensor_proto([(10,), (20,), (30,)], dtype=dtype)
+      self.assertEquals(dtype, t.dtype)
+      self.assertProtoEquals("dim { size: 3 }", t.tensor_shape)
+      self.assertEquals(10, t.int_val[0])
+      self.assertEquals(20, t.int_val[1])
+      self.assertEquals(30, t.int_val[2])
+
   def testString(self):
     t = tensor_util.make_tensor_proto("foo")
     self.assertProtoEquals("""
@@ -274,7 +284,7 @@ class TensorUtilTest(tf.test.TestCase):
     self.assertEquals(np.object, a.dtype)
     self.assertAllEqual(np.array([[b"a", b"ab"], [b"abc", b"abcd"]]), a)
 
-  def testComplex(self):
+  def testComplex64(self):
     t = tensor_util.make_tensor_proto((1+2j), dtype=tf.complex64)
     self.assertProtoEquals("""
       dtype: DT_COMPLEX64
@@ -286,16 +296,30 @@ class TensorUtilTest(tf.test.TestCase):
     self.assertEquals(np.complex64, a.dtype)
     self.assertAllEqual(np.array(1 + 2j), a)
 
-  def testComplexWithImplicitRepeat(self):
-    t = tensor_util.make_tensor_proto((1+1j), shape=[3, 4],
-                                      dtype=tf.complex64)
+  def testComplex128(self):
+    t = tensor_util.make_tensor_proto((1+2j), dtype=tf.complex128)
+    self.assertProtoEquals("""
+      dtype: DT_COMPLEX128
+      tensor_shape {}
+      dcomplex_val: 1
+      dcomplex_val: 2
+      """, t)
     a = tensor_util.MakeNdarray(t)
-    self.assertAllClose(np.array([[(1+1j), (1+1j), (1+1j), (1+1j)],
-                                  [(1+1j), (1+1j), (1+1j), (1+1j)],
-                                  [(1+1j), (1+1j), (1+1j), (1+1j)]],
-                                 dtype=np.complex64), a)
+    self.assertEquals(np.complex128, a.dtype)
+    self.assertAllEqual(np.array(1 + 2j), a)
 
-  def testComplexN(self):
+  def testComplexWithImplicitRepeat(self):
+    for dtype, np_dtype in [(tf.complex64, np.complex64),
+                            (tf.complex128, np.complex128)]:
+      t = tensor_util.make_tensor_proto((1+1j), shape=[3, 4],
+                                        dtype=dtype)
+      a = tensor_util.MakeNdarray(t)
+      self.assertAllClose(np.array([[(1+1j), (1+1j), (1+1j), (1+1j)],
+                                    [(1+1j), (1+1j), (1+1j), (1+1j)],
+                                    [(1+1j), (1+1j), (1+1j), (1+1j)]],
+                                   dtype=np_dtype), a)
+
+  def testComplex64N(self):
     t = tensor_util.make_tensor_proto([(1+2j), (3+4j), (5+6j)], shape=[1, 3],
                                       dtype=tf.complex64)
     self.assertProtoEquals("""
@@ -312,7 +336,24 @@ class TensorUtilTest(tf.test.TestCase):
     self.assertEquals(np.complex64, a.dtype)
     self.assertAllEqual(np.array([[(1+2j), (3+4j), (5+6j)]]), a)
 
-  def testComplexNpArray(self):
+  def testComplex128N(self):
+    t = tensor_util.make_tensor_proto([(1+2j), (3+4j), (5+6j)], shape=[1, 3],
+                                      dtype=tf.complex128)
+    self.assertProtoEquals("""
+      dtype: DT_COMPLEX128
+      tensor_shape { dim { size: 1 } dim { size: 3 } }
+      dcomplex_val: 1
+      dcomplex_val: 2
+      dcomplex_val: 3
+      dcomplex_val: 4
+      dcomplex_val: 5
+      dcomplex_val: 6
+      """, t)
+    a = tensor_util.MakeNdarray(t)
+    self.assertEquals(np.complex128, a.dtype)
+    self.assertAllEqual(np.array([[(1+2j), (3+4j), (5+6j)]]), a)
+
+  def testComplex64NpArray(self):
     t = tensor_util.make_tensor_proto(
         np.array([[(1+2j), (3+4j)], [(5+6j), (7+8j)]]), dtype=tf.complex64)
     # scomplex_val are real_0, imag_0, real_1, imag_1, ...
@@ -330,6 +371,26 @@ class TensorUtilTest(tf.test.TestCase):
       """, t)
     a = tensor_util.MakeNdarray(t)
     self.assertEquals(np.complex64, a.dtype)
+    self.assertAllEqual(np.array([[(1+2j), (3+4j)], [(5+6j), (7+8j)]]), a)
+
+  def testComplex128NpArray(self):
+    t = tensor_util.make_tensor_proto(
+        np.array([[(1+2j), (3+4j)], [(5+6j), (7+8j)]]), dtype=tf.complex128)
+    # scomplex_val are real_0, imag_0, real_1, imag_1, ...
+    self.assertProtoEquals("""
+      dtype: DT_COMPLEX128
+      tensor_shape { dim { size: 2 } dim { size: 2 } }
+      dcomplex_val: 1
+      dcomplex_val: 2
+      dcomplex_val: 3
+      dcomplex_val: 4
+      dcomplex_val: 5
+      dcomplex_val: 6
+      dcomplex_val: 7
+      dcomplex_val: 8
+      """, t)
+    a = tensor_util.MakeNdarray(t)
+    self.assertEquals(np.complex128, a.dtype)
     self.assertAllEqual(np.array([[(1+2j), (3+4j)], [(5+6j), (7+8j)]]), a)
 
   def testUnsupportedDType(self):

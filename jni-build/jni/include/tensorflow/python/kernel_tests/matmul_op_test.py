@@ -120,7 +120,7 @@ class MatMulTest(tf.test.TestCase):
       self._testCpuMatmul(x, y, True, True)
       self._testGpuMatmul(x, y, True, True)
 
-  def testDoubleRandomTranposeBoth(self):
+  def testDoubleRandomTransposeBoth(self):
     for _ in range(10):
       n, k, m = np.random.randint(1, 100, size=3)
       x = self._randMatrix(k, n, np.float64)
@@ -153,8 +153,7 @@ class MatMulTest(tf.test.TestCase):
     b = tf.placeholder(tf.float32, [36, 2])
     c = tf.placeholder(tf.float32, [37])
     with self.assertRaisesRegexp(
-        ValueError,
-        r"Dimensions Dimension\(37\) and Dimension\(36\) are not compatible"):
+        ValueError, "Dimensions 37 and 36 are not compatible"):
       tf.matmul(a, b)
     with self.assertRaisesRegexp(ValueError, "must have rank 2"):
       tf.matmul(a, c)

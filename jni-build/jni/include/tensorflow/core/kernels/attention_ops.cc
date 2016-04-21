@@ -13,17 +13,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-// See docs in ../ops/attention_ops.cc.
+// See docs in ../ops/image_ops.cc.
 
 #define EIGEN_USE_THREADS
 
 #include <vector>
-#include "third_party/eigen3/unsupported/Eigen/CXX11/NeuralNetworks"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/types.h"
+#include "tensorflow/core/kernels/eigen_attention.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/types.h"
 
@@ -78,6 +78,10 @@ class ExtractGlimpseOp : public OpKernel {
 
     Tensor* output = nullptr;
     OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+    if (output->NumElements() == 0) {
+      // Nothing else to do.
+      return;
+    }
 
     std::vector<Eigen::IndexPair<float> > offset_vec;
     offset_vec.reserve(batch_size);

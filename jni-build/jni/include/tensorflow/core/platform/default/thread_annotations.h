@@ -73,6 +73,15 @@ limitations under the License.
 #define ACQUIRED_BEFORE(...) \
   THREAD_ANNOTATION_ATTRIBUTE__(acquired_before(__VA_ARGS__))
 
+#define ACQUIRE(...) \
+  THREAD_ANNOTATION_ATTRIBUTE__(acquire_capability(__VA_ARGS__))
+
+#define ACQUIRE_SHARED(...) \
+  THREAD_ANNOTATION_ATTRIBUTE__(acquire_shared_capability(__VA_ARGS__))
+
+#define RELEASE(...) \
+  THREAD_ANNOTATION_ATTRIBUTE__(release_capability(__VA_ARGS__))
+
 // Document a function that expects a mutex to be held prior to entry.
 // The mutex is expected to be held both on entry to and exit from the
 // function.
@@ -147,11 +156,6 @@ limitations under the License.
 // C++ syntax, but which are present for documentation purposes.  These
 // annotations will be ignored by the analysis.
 #define TS_UNCHECKED(x) ""
-
-// Disables warnings for a single read operation.  This can be used to do racy
-// reads of guarded data members, in cases where the race is benign.
-#define TS_UNCHECKED_READ(x) \
-  ::tensorflow::thread_safety_analysis::ts_unchecked_read(x)
 
 namespace tensorflow {
 namespace thread_safety_analysis {

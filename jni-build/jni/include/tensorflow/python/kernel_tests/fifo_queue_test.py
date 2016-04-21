@@ -1149,6 +1149,31 @@ class FIFOQueueTest(tf.test.TestCase):
       for (input_elem, output_elem) in zip(input_tuple, output_tuple):
         self.assertAllEqual(input_elem, output_elem)
 
+  def testDeviceColocation(self):
+    with tf.device("/job:ps"):
+      q = tf.FIFOQueue(32, [tf.int32], name="q")
+
+    with tf.device("/job:worker/task:7"):
+      dequeued_t = q.dequeue()
+
+    self.assertDeviceEqual("/job:ps", dequeued_t.device)
+    self.assertEqual([b"loc:@q"], dequeued_t.op.colocation_groups())
+
+
+class FIFOQueueWithTimeoutTest(tf.test.TestCase):
+
+  def testDequeueWithTimeout(self):
+    with self.test_session(
+        config=tf.ConfigProto(operation_timeout_in_ms=20)) as sess:
+      q = tf.FIFOQueue(10, tf.float32)
+      dequeued_t = q.dequeue()
+
+      # Intentionally do not run any enqueue_ops so that dequeue will block
+      # until operation_timeout_in_ms.
+      with self.assertRaisesRegexp(tf.errors.DeadlineExceededError,
+                                   "Timed out waiting for notification"):
+        sess.run(dequeued_t)
+
 
 if __name__ == "__main__":
   tf.test.main()
