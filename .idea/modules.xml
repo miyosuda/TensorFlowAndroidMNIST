@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/TensorFlowMNIST.iml" filepath="$PROJECT_DIR$/TensorFlowMNIST.iml" />
+      <module fileurl="file://$PROJECT_DIR$/TensorFlowAndroidMNIST.iml" filepath="$PROJECT_DIR$/TensorFlowAndroidMNIST.iml" />
       <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" />
     </modules>
   </component>

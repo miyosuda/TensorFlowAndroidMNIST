@@ -69,6 +69,5 @@ and copy .so file into app/src/main/jniLibs/armeabi-v7a/ with
     $ make install
 
 (Unlike original Android demo in Tensorflow, you don't need to install bazel to build this demo.
-And it seems that original Tensorflow Android demo fails to be built with bazel and latest ndk-r11b, and requires old ndk-r10e now, but this demo can be built with r11b.)
 
-Tensorflow library files (.a files) and header files are extracted from original Tensorflow Android demo r0.8.
+Tensorflow library files (.a files) and header files are extracted from original Tensorflow Android demo r0.10.
