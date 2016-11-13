@@ -37,7 +37,7 @@ public class MainActivity extends AppCompatActivity implements View.OnTouchListe
 	private DrawModel mModel;
 	private DrawView mDrawView;
 
-	private PointF mTmpPiont = new PointF();
+	private PointF mTmpPoint = new PointF();
 
 	private DigitDetector mDetector = new DigitDetector();
 
@@ -113,9 +113,9 @@ public class MainActivity extends AppCompatActivity implements View.OnTouchListe
 	private void processTouchDown(MotionEvent event) {
 		mLastX = event.getX();
 		mLastY = event.getY();
-		mDrawView.calcPos(mLastX, mLastY, mTmpPiont);
-		float lastConvX = mTmpPiont.x;
-		float lastConvY = mTmpPiont.y;
+		mDrawView.calcPos(mLastX, mLastY, mTmpPoint);
+		float lastConvX = mTmpPoint.x;
+		float lastConvY = mTmpPoint.y;
 		mModel.startLine(lastConvX, lastConvY);
 	}
 
@@ -123,9 +123,9 @@ public class MainActivity extends AppCompatActivity implements View.OnTouchListe
 		float x = event.getX();
 		float y = event.getY();
 
-		mDrawView.calcPos(x, y, mTmpPiont);
-		float newConvX = mTmpPiont.x;
-		float newConvY = mTmpPiont.y;
+		mDrawView.calcPos(x, y, mTmpPoint);
+		float newConvX = mTmpPoint.x;
+		float newConvY = mTmpPoint.y;
 		mModel.addLineElem(newConvX, newConvY);
 
 		mLastX = x;
